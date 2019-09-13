@@ -1,0 +1,3 @@
+<launch>
+  <node pkg="riptide_hardware" type="acoustics.py" name="acoustics" output="screen" />
+</launch>
