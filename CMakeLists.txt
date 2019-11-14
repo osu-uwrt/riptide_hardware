@@ -26,8 +26,6 @@ find_package(catkin REQUIRED
 
 find_package(Eigen3 REQUIRED)
 
-add_service_files(FILES Pneumatics.srv)
-
 generate_messages()
 
 generate_dynamic_reconfigure_options(
