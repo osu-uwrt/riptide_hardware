@@ -1,5 +1,4 @@
 <launch>
-<include file="$(find riptide_hardware)/launch/cameras_jetson.launch" />
   
   <machine address="jetson" name="jetson" user="ros" env-loader="~/osu-uwrt/riptide_software/src/riptide_utilities/baycat_master.sh"/>
 	<arg name="machine_name" default="jetson"/>
@@ -23,5 +22,5 @@
     <param name="config_path"           value="$(arg yolo_config_path)" />
   </node>
 
- <!--<node name="republish" type="republish" pkg="image_transport" output="screen" 	args="compressed in:=/front_camera/image_raw raw out:=/camera/image_raw" /> -->
+  <!--<node name="republish" type="republish" pkg="image_transport" output="screen" 	args="compressed in:=/front_camera/image_raw raw out:=/camera/image_raw" /> -->
 </launch>
