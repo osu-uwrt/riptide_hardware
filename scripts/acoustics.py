@@ -60,14 +60,14 @@ def commandCB(command):
 		PFdata[i] = (data[i*16 + 11] << 16) + (data[i*16 + 10] << 8) + data[i*16 + 9]
 
 
-	rospy.loginfo(calculate(PFdata, PAdata, SFdata, SAdata, 2000))
+	rospy.loginfo(calculate(PFdata, PAdata, SFdata, SAdata, 4000))
 
-	# if err < 0:
-	# 	rospy.logerr("Reading Failed")
-	# 	return
+	if err < 0:
+		rospy.logerr("Reading Failed")
+		return
 
-	# file = open(command.fileName, "wb")
-	# file.write(data)
+	file = open(command.fileName, "wb")
+	file.write(data)
 
 def restrictAngle(angle):
     while angle > 180:
@@ -85,6 +85,30 @@ def filter(data, frequency, ntaps=51):
     y = lfilter(taps, 1, data)
     return np.float32(y[100:])
 
+def getTime(data, frequency):
+    amps = [0] * (len(data) // SAMPLE_LENGTH)
+    index = int(SAMPLE_LENGTH * frequency / SAMPLE_FREQ)
+    for i in range(1, len(data) // SAMPLE_LENGTH - 1):
+        amps[i] = np.abs(np.fft.fft(data[SAMPLE_LENGTH*i:SAMPLE_LENGTH*(i+1)])[index])
+
+    scores = [0] * (len(data) // SAMPLE_LENGTH)
+    for i in range(7, len(data) // SAMPLE_LENGTH - 1):
+        scores[i] = amps[i] * amps[i] / ((amps[i-1]+ amps[i - 2]+amps[i - 3]+amps[i - 4] + amps[i - 5] + amps[i - 6]) /6)
+
+    pingApprox = scores.index(max(scores)) * SAMPLE_LENGTH
+
+    fineAmps = [0] * (PING_DURATION * 7 // 4)
+    for i in range(PING_DURATION * 7 // 4):
+        sample = data[pingApprox - PING_DURATION*5//4 + i : pingApprox - PING_DURATION*5//4 + i + SAMPLE_LENGTH]
+        fineAmps[i] = np.abs(np.fft.fft(sample)[index])
+
+    maxVal = 0
+    for i in range(SAMPLE_LENGTH // 2, PING_DURATION*7//4 - SAMPLE_LENGTH // 2):
+        val = fineAmps[i + SAMPLE_LENGTH / 2] - 2 * fineAmps[i] + fineAmps[i - SAMPLE_LENGTH / 2]
+        if val > maxVal:
+            maxVal = val
+            time = pingApprox + i - PING_DURATION*5//4 + SAMPLE_LENGTH
+    return time
 	
 PING_DURATION = 2048
 SAMPLE_LENGTH = 512
@@ -98,41 +122,12 @@ rToD = 180 / math.pi
 def calculate(PFdata, PAdata, SFdata, SAdata, frequency):
     period = SAMPLE_FREQ / frequency
 
-    amps = [0] * (len(PFdata) // SAMPLE_LENGTH)
     index = int(SAMPLE_LENGTH * frequency / SAMPLE_FREQ)
-    for i in range(1, len(PFdata) // SAMPLE_LENGTH - 1):
-        amps[i] = np.abs(np.fft.fft(PFdata[SAMPLE_LENGTH*i:SAMPLE_LENGTH*(i+1)])[index])
-
-    scores = [0] * (len(PFdata) // SAMPLE_LENGTH)
-    for i in range(7, len(PFdata) // SAMPLE_LENGTH - 1):
-        scores[i] = amps[i] * amps[i] / ((amps[i-1]+ amps[i - 2]+amps[i - 3]+amps[i - 4] + amps[i - 5] + amps[i - 6]) /6)
-
-    pingApprox = scores.index(max(scores)) * SAMPLE_LENGTH
-
-    PFAmps = [0] * (PING_DURATION * 7 // 4)
-    for i in range(PING_DURATION * 7 // 4):
-        sample = PFdata[pingApprox - PING_DURATION*5//4 + i : pingApprox - PING_DURATION*5//4 + i + SAMPLE_LENGTH]
-        PFAmps[i] = np.abs(np.fft.fft(sample)[index])
-
-    maxVal = 0
-    for i in range(SAMPLE_LENGTH, PING_DURATION*7//4):
-        val = PFAmps[i] - PFAmps[i-SAMPLE_LENGTH]
-        if val > maxVal:
-            maxVal = val
-            PFTime = pingApprox + i - PING_DURATION*5//4
-
-    template = filter(PFdata[PFTime - SAMPLE_LENGTH//2 : PFTime + SAMPLE_LENGTH//2], frequency)
-    PASample = filter(PAdata[PFTime - SAMPLE_LENGTH//2 - MAX_OFFSET : PFTime + SAMPLE_LENGTH//2 + MAX_OFFSET], frequency)
-    SFSample = filter(SFdata[PFTime - SAMPLE_LENGTH//2 - MAX_OFFSET : PFTime + SAMPLE_LENGTH//2 + MAX_OFFSET], frequency)
-    SASample = filter(SAdata[PFTime - SAMPLE_LENGTH//2 - MAX_OFFSET : PFTime + SAMPLE_LENGTH//2 + MAX_OFFSET], frequency)
     
-    PFPATimeDiff = cv2.minMaxLoc(cv2.matchTemplate(PASample, template, cv2.TM_CCORR_NORMED))[3][1]
-    PFSFTimeDiff = cv2.minMaxLoc(cv2.matchTemplate(SFSample, template, cv2.TM_CCORR_NORMED))[3][1]
-    PFSATimeDiff = cv2.minMaxLoc(cv2.matchTemplate(SASample, template, cv2.TM_CCORR_NORMED))[3][1]
-
-    PATime = PFTime + PFPATimeDiff - MAX_OFFSET
-    SFTime = PFTime + PFSFTimeDiff - MAX_OFFSET
-    SATime = PFTime + PFSATimeDiff - MAX_OFFSET
+    PFTime = getTime(PFdata, frequency)
+    PATime = getTime(PAdata, frequency)
+    SFTime = getTime(SFdata, frequency)
+    SATime = getTime(SAdata, frequency)
 
     PFphase = np.angle(np.fft.fft(PFdata[PFTime:PFTime + SAMPLE_LENGTH])[index]) / math.pi * 180
     PAphase = np.angle(np.fft.fft(PAdata[PATime:PATime + SAMPLE_LENGTH])[index]) / math.pi * 180
@@ -179,7 +174,7 @@ def initFPGA():
 	fpga.SetTimeout(100)
 
 	rospy.loginfo("Configuring")
-	error = fpga.ConfigureFPGA(os.path.expanduser("~/osu-uwrt/riptide_software/src/riptide_hardware/assets/acoustics/output_file.rbf"))
+	error = fpga.ConfigureFPGA(os.path.expanduser("~/osu-uwrt/riptide_software/src/puddles_hardware/assets/acoustics/output_file.rbf"))
 	if error != ok.okCFrontPanel.NoError:
 		rospy.logerr("Failed to configure housing: " + ok.okCFrontPanel.GetErrorString(error))
 		return False
