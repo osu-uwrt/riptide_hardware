@@ -211,8 +211,7 @@ def turn(angle):
 if __name__ == '__main__':
     global resetPub
     rospy.init_node("acoustics")
-    #if initFPGA():
-    resetPub = rospy.Publisher("/controls/reset", ResetControls, queue_size=1)
-    rospy.Subscriber("command/acoustics", AcousticsCommand, commandCB)
-    rospy.Subscriber("command/acousticsAngle", Float32, turnCB)
-    rospy.spin()
+    if initFPGA():
+        resetPub = rospy.Publisher("/controls/reset", ResetControls, queue_size=1)
+        rospy.Subscriber("command/acoustics", AcousticsCommand, commandCB)
+        rospy.spin()
