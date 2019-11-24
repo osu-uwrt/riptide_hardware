@@ -2,11 +2,13 @@
 
 from lib import ok
 import rospy
-from riptide_msgs.msg import AcousticsCommand
+import actionlib
+from riptide_msgs.msg import AcousticsCommand, Imu, ResetControls
+import riptide_controllers.msg
+from std_msgs.msg import Float32
 import math
 import numpy as np
 import cv2
-from scipy.signal import firwin, lfilter
 import os
 
 fpga = None
@@ -100,10 +102,7 @@ def calculate(PFdata, PAdata, SFdata, SAdata, frequency):
 
     amps = [0] * (len(PFdata) // SAMPLE_LENGTH)
     index = int(SAMPLE_LENGTH * frequency / SAMPLE_FREQ)
-    for i in range(1, len(PFdata) // SAMPLE_LENGTH - 1):
-        amps[i] = np.abs(np.fft.fft(PFdata[SAMPLE_LENGTH*i:SAMPLE_LENGTH*(i+1)])[index])
-
-    scores = [0] * (len(PFdata) // SAMPLE_LENGTH)
+    for i in range(1, len(PFdata) // SAMPLE_LENGTH - 1):Yaw
     for i in range(7, len(PFdata) // SAMPLE_LENGTH - 1):
         scores[i] = amps[i] * amps[i] / ((amps[i-1]+ amps[i - 2]+amps[i - 3]+amps[i - 4] + amps[i - 5] + amps[i - 6]) /6)
 
@@ -187,8 +186,33 @@ def initFPGA():
 	return True
 
 
+def turnCB(msg):
+    imu = rospy.wait_for_message("/state/imu", Imu)
+    resetPub.publish(False)
+    client = actionlib.SimpleActionClient(
+        "go_to_depth", riptide_controllers.msg.GoToDepthAction)
+    client.wait_for_server()
+
+    client.send_goal(riptide_controllers.msg.GoToDepthGoal(1))
+    client.wait_for_result()
+
+
+    client = actionlib.SimpleActionClient(
+        "go_to_yaw", riptide_controllers.msg.GoToYawAction)
+    client.wait_for_server()
+
+    client.send_goal(riptide_controllers.msg.GoToYawGoal(restrictAngle(imu.rpy_deg.z + msg.data)))
+    client.wait_for_result()
+
+    rospy.sleep(1)
+    resetPub.publish(True)
+
+
 if __name__ == '__main__':
-	rospy.init_node("acoustics")
-	if initFPGA():
-		rospy.Subscriber("command/acoustics", AcousticsCommand, commandCB)
-		rospy.spin()
+    global resetPub
+    rospy.init_node("acoustics")
+    #if initFPGA():
+    resetPub = rospy.Publisher("/controls/reset", ResetControls, queue_size=1)
+    rospy.Subscriber("command/acoustics", AcousticsCommand, commandCB)
+    rospy.Subscriber("command/acousticsAngle", Float32, turnCB)
+    rospy.spin()
