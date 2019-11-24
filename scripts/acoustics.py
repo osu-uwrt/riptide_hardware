@@ -20,56 +20,58 @@ def unsignedToSigned(val):
     return val
 
 def commandCB(command):
-	if not fpga.IsOpen():
-		rospy.logerr("Housing not connected")
-		return
+    if not fpga.IsOpen():
+        rospy.logerr("Housing not connected")
+        return
 
-	# Reset FIFOs
-	fpga.SetWireInValue(0x00, 0x0004)
-	fpga.UpdateWireIns()
-	fpga.SetWireInValue(0x00, 0x0000)
-	fpga.UpdateWireIns()
+    # Reset FIFOs
+    fpga.SetWireInValue(0x00, 0x0004)
+    fpga.UpdateWireIns()
+    fpga.SetWireInValue(0x00, 0x0000)
+    fpga.UpdateWireIns()
 
-	rospy.loginfo("Collecting")
-	# Collect Data
-	fpga.SetWireInValue(0x00, 0x0002)
-	fpga.UpdateWireIns()
+    rospy.loginfo("Collecting")
+    # Collect Data
+    fpga.SetWireInValue(0x00, 0x0002)
+    fpga.UpdateWireIns()
 
-	length = 2000
+    length = 2000
 
-	rospy.sleep(rospy.Duration(length / 1000.0))
-	
-	rospy.loginfo("Done")
-	NumOfCollections = length * 512
-	data = bytearray(NumOfCollections * 16)
+    rospy.sleep(rospy.Duration(length / 1000.0))
 
-	PFdata = [0] * NumOfCollections
-	PAdata = [0] * NumOfCollections
-	SFdata = [0] * NumOfCollections
-	SAdata = [0] * NumOfCollections
+    rospy.loginfo("Done")
+    NumOfCollections = length * 512
+    data = bytearray(NumOfCollections * 16)
 
-	# Stop recording and begin reading
-	fpga.SetWireInValue(0x00, 0x0001)
-	fpga.UpdateWireIns()
-	err = fpga.ReadFromBlockPipeOut(0xa0, 512, data)
-	fpga.SetWireInValue(0x00, 0x0000)
-	fpga.UpdateWireIns()
+    PFdata = [0] * NumOfCollections
+    PAdata = [0] * NumOfCollections
+    SFdata = [0] * NumOfCollections
+    SAdata = [0] * NumOfCollections
 
-	for i in range(NumOfCollections):
-		SAdata[i] = (data[i*16 + 2] << 16) + (data[i*16 + 1] << 8) + data[i*16]
-		SFdata[i] = (data[i*16 + 5] << 16) + (data[i*16 + 4] << 8) + data[i*16 + 3]
-		PAdata[i] = (data[i*16 + 8] << 16) + (data[i*16 + 7] << 8) + data[i*16 + 6]
-		PFdata[i] = (data[i*16 + 11] << 16) + (data[i*16 + 10] << 8) + data[i*16 + 9]
+    # Stop recording and begin reading
+    fpga.SetWireInValue(0x00, 0x0001)
+    fpga.UpdateWireIns()
+    err = fpga.ReadFromBlockPipeOut(0xa0, 512, data)
+    fpga.SetWireInValue(0x00, 0x0000)
+    fpga.UpdateWireIns()
+
+    for i in range(NumOfCollections):
+        SAdata[i] = (data[i*16 + 2] << 16) + (data[i*16 + 1] << 8) + data[i*16]
+        SFdata[i] = (data[i*16 + 5] << 16) + (data[i*16 + 4] << 8) + data[i*16 + 3]
+        PAdata[i] = (data[i*16 + 8] << 16) + (data[i*16 + 7] << 8) + data[i*16 + 6]
+        PFdata[i] = (data[i*16 + 11] << 16) + (data[i*16 + 10] << 8) + data[i*16 + 9]
+
+    (altitude, azimuth) = calculate(PFdata, PAdata, SFdata, SAdata, 4000)
+    rospy.loginfo((altitude, azimuth))
+    turn(azimuth - 90)
 
 
-	rospy.loginfo(calculate(PFdata, PAdata, SFdata, SAdata, 4000))
+    if err < 0:
+        rospy.logerr("Reading Failed")
+        return
 
-	if err < 0:
-		rospy.logerr("Reading Failed")
-		return
-
-	file = open(command.fileName, "wb")
-	file.write(data)
+    file = open(command.fileName, "wb")
+    file.write(data)
 
 def restrictAngle(angle):
     while angle > 180:
@@ -78,14 +80,14 @@ def restrictAngle(angle):
         angle += 360
     return angle
  
-def filter(data, frequency, ntaps=51):
-    data = [data[0]] * 100 + data
-    nyq = 0.5 * SAMPLE_FREQ
-    low = (frequency-100) / nyq
-    high = (frequency+100) / nyq
-    taps = firwin(ntaps, [low, high], pass_zero=False)
-    y = lfilter(taps, 1, data)
-    return np.float32(y[100:])
+# def filter(data, frequency, ntaps=51):
+#     data = [data[0]] * 100 + data
+#     nyq = 0.5 * SAMPLE_FREQ
+#     low = (frequency-100) / nyq
+#     high = (frequency+100) / nyq
+#     taps = firwin(ntaps, [low, high], pass_zero=False)
+#     y = lfilter(taps, 1, data)
+#     return np.float32(y[100:])
 
 def getTime(data, frequency):
     amps = [0] * (len(data) // SAMPLE_LENGTH)
@@ -159,7 +161,7 @@ def calculate(PFdata, PAdata, SFdata, SAdata, frequency):
     if sqrt > s:
         sqrt = s
     altitude = math.acos(sqrt / s) * 180 / math.pi
-    
+
     return altitude, azimuth
 
 def initFPGA():
@@ -184,7 +186,7 @@ def initFPGA():
 	return True
 
 
-def turnCB(msg):
+def turn(angle):
     imu = rospy.wait_for_message("/state/imu", Imu)
     resetPub.publish(False)
     client = actionlib.SimpleActionClient(
@@ -199,7 +201,7 @@ def turnCB(msg):
         "go_to_yaw", riptide_controllers.msg.GoToYawAction)
     client.wait_for_server()
 
-    client.send_goal(riptide_controllers.msg.GoToYawGoal(restrictAngle(imu.rpy_deg.z + msg.data)))
+    client.send_goal(riptide_controllers.msg.GoToYawGoal(restrictAngle(imu.rpy_deg.z + angle)))
     client.wait_for_result()
 
     rospy.sleep(1)
