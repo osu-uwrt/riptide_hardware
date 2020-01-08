@@ -9,7 +9,7 @@ int main(int argc, char **argv)
 
 DVLProcessor::DVLProcessor() : nh("dvl_processor")
 {
-  imu_state_sub = nh.subscribe<riptide_msgs::Imu>("/state/imu", 1, &DVLProcessor::ImuCB, this);
+  imu_state_sub = nh.subscribe<sensor_msgs::Imu>("/imu/data", 1, &DVLProcessor::ImuCB, this);
   dvl_data_sub = nh.subscribe<nortek_dvl::Dvl>("/dvl/dvl", 1, &DVLProcessor::DvlCB, this);
 
   dvl_state_pub = nh.advertise<nortek_dvl::Dvl>("/state/dvl", 1);
@@ -47,12 +47,12 @@ void DVLProcessor::LoadDVLProperties()
   psi = properties["properties"]["dvl"][3].as<double>() * PI / 180;
 }
 
-void DVLProcessor::ImuCB(const riptide_msgs::Imu::ConstPtr &imu_msg)
+void DVLProcessor::ImuCB(const sensor_msgs::Imu::ConstPtr &imu_msg)
 {
   Vector3d angular_vel;
-  angular_vel(0) = imu_msg->ang_vel_rad.x;
-  angular_vel(1) = imu_msg->ang_vel_rad.y;
-  angular_vel(2) = imu_msg->ang_vel_rad.z;
+  angular_vel(0) = imu_msg->angular_velocity.x;
+  angular_vel(1) = imu_msg->angular_velocity.y;
+  angular_vel(2) = imu_msg->angular_velocity.z;
   relative_vel = angular_vel.cross(dvl_position);
 }
 

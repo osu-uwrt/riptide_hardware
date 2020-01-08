@@ -4,7 +4,7 @@
 #include "ros/ros.h"
 #include "geometry_msgs/Vector3.h"
 #include "nortek_dvl/Dvl.h"
-#include "riptide_msgs/Imu.h"
+#include "sensor_msgs/Imu.h"
 
 #include "eigen3/Eigen/Dense"
 #include "eigen3/Eigen/Core"
@@ -36,7 +36,7 @@ public:
   template<typename T>
   void LoadParam(string param, T &var);
   void LoadDVLProperties();
-  void ImuCB(const riptide_msgs::Imu::ConstPtr &imu_msg);
+  void ImuCB(const sensor_msgs::Imu::ConstPtr &imu_msg);
   void DvlCB(const nortek_dvl::Dvl::ConstPtr &dvl_msg);
 };
 
