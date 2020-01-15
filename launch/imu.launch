@@ -2,7 +2,11 @@
     <arg name="device" default="/dev/imu_riptide" />
     <arg name="enable_mag_update" default="true" />
     <arg name="enable_tf" default="false" />
+    <arg name="use_enu" default="false" />
+    <arg name="frame_id" default="puddles/imu_link" />
     
-    <include file="$(find imu_3dm_gx4)/launch/imu.launch" pass_all_args="true" />
-    <include file="$(find imu_3dm_gx4)/launch/merge.launch" />
+    <group ns="puddles">
+        <include file="$(find imu_3dm_gx4)/launch/imu.launch" pass_all_args="true" />
+        <include file="$(find imu_3dm_gx4)/launch/merge.launch" />
+    </group>
 </launch>
