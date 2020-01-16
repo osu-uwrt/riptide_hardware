@@ -189,7 +189,7 @@ def initFPGA():
 
 
 def turn(angle):
-    quat = rospy.wait_for_message("/imu/data", Imu).orientation
+    quat = rospy.wait_for_message("imu/data", Imu).orientation
     quat = [quat.x, quat.y, quat.z, quat.w]
     yaw = euler_from_quaternion(quat)[2] * 180 / math.pi
     resetPub.publish(False)
@@ -216,6 +216,6 @@ if __name__ == '__main__':
     global resetPub
     rospy.init_node("acoustics")
     if initFPGA():
-        resetPub = rospy.Publisher("/controls/reset", ResetControls, queue_size=1)
+        resetPub = rospy.Publisher("controls/reset", ResetControls, queue_size=1)
         rospy.Subscriber("command/acoustics", AcousticsCommand, commandCB)
         rospy.spin()

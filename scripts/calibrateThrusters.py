@@ -37,7 +37,7 @@ def collect(offset):
     currentAvg = 0
     forceAvg = 0
     for i in range(10):
-        currentAvg += rospy.wait_for_message("/state/thruster_currents", Float32MultiArray).data[0]
+        currentAvg += rospy.wait_for_message("state/thruster_currents", Float32MultiArray).data[0]
         force = None
         ard.flushInput()
         ard.readline()

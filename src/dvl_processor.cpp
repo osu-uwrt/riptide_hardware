@@ -9,11 +9,11 @@ int main(int argc, char **argv)
 
 DVLProcessor::DVLProcessor() : nh("dvl_processor")
 {
-  imu_state_sub = nh.subscribe<sensor_msgs::Imu>("/imu/data", 1, &DVLProcessor::ImuCB, this);
-  dvl_data_sub = nh.subscribe<nortek_dvl::Dvl>("/dvl/dvl", 1, &DVLProcessor::DvlCB, this);
+  imu_state_sub = nh.subscribe<sensor_msgs::Imu>("imu/data", 1, &DVLProcessor::ImuCB, this);
+  dvl_data_sub = nh.subscribe<nortek_dvl::Dvl>("dvl/dvl", 1, &DVLProcessor::DvlCB, this);
 
-  dvl_state_pub = nh.advertise<nortek_dvl::Dvl>("/state/dvl", 1);
-  // dvl_data_pub = nh.advertise<riptide_msgs::Dvl>("/state/dvl2", 1);
+  dvl_state_pub = nh.advertise<nortek_dvl::Dvl>("state/dvl", 1);
+  // dvl_data_pub = nh.advertise<riptide_msgs::Dvl>("state/dvl2", 1);
 
   // Load relative positions between DVL and COM from YAML file
   DVLProcessor::LoadParam<string>("properties_file", properties_file);
