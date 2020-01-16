@@ -7,7 +7,7 @@ int main(int argc, char **argv)
   ros::spin();
 }
 
-DVLProcessor::DVLProcessor() : nh("dvl_processor")
+DVLProcessor::DVLProcessor() : nh()
 {
   imu_state_sub = nh.subscribe<sensor_msgs::Imu>("imu/data", 1, &DVLProcessor::ImuCB, this);
   dvl_data_sub = nh.subscribe<nortek_dvl::Dvl>("dvl/dvl", 1, &DVLProcessor::DvlCB, this);

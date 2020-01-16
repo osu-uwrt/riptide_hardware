@@ -20,7 +20,7 @@ int main(int argc, char** argv) {
   }
 }
 
-Acoustics::Acoustics() : nh("bag_to_csv") { // NOTE: there is no namespace declared in nh()
+Acoustics::Acoustics() : nh() {
 	acoustics_sub = nh.subscribe<riptide_msgs::Acoustics>("state/acoustics", 1, &Acoustics::Callback, this);
     LoadParam<string>("username", username);
     LoadParam<string>("file_name", file_name);

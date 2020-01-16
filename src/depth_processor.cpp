@@ -10,7 +10,7 @@ int main(int argc, char** argv)
 }
 
 //Constructor
-DepthProcessor::DepthProcessor() : nh("depth_processor") {
+DepthProcessor::DepthProcessor() : nh() {
  depth_sub = nh.subscribe<riptide_msgs::Depth>("depth/raw", 1, &DepthProcessor::DepthCB, this);
  depth_state_pub = nh.advertise<riptide_msgs::Depth>("state/depth", 1);
  DepthProcessor::LoadParam<double>("post_IIR_LPF_bandwidth", post_IIR_LPF_bandwidth);
