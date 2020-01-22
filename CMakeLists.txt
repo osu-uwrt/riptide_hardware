@@ -47,11 +47,6 @@ include_directories(${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIR})
 cmake_host_system_information(RESULT _host_name QUERY HOSTNAME)
 
 if(NOT _host_name MATCHES "jetson")
-
-    add_executable(dvl_processor src/dvl_processor.cpp)
-    target_link_libraries(dvl_processor ${catkin_LIBRARIES} yaml-cpp)
-    add_dependencies(dvl_processor ${catkin_EXPORTED_TARGETS})
-
     add_executable(depth_processor src/depth_processor.cpp)
     target_link_libraries(depth_processor ${catkin_LIBRARIES})
     add_dependencies(depth_processor ${catkin_EXPORTED_TARGETS})
