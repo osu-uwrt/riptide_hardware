@@ -6,9 +6,6 @@ add_compile_options(-std=c++11)
 # There is no need to add mention the specific dependency, such as
 # <package_name>_gencpp, or <package_name>_gencfg
 
-# NOTE: To include OpenCV, must do find_package(OpenCV REQUIRED), followed by
-# include_directories(...)
-
 find_package(catkin REQUIRED
     COMPONENTS
     roslint
@@ -19,7 +16,6 @@ find_package(catkin REQUIRED
     message_filters
     message_generation
     sensor_msgs
-    cv_bridge
     dynamic_reconfigure
 )
 
@@ -35,21 +31,9 @@ catkin_package(
   CATKIN_DEPENDS
     dynamic_reconfigure
 )
-find_package(OpenCV REQUIRED) # To include, OpenCV, this MUST go BEFORE include_directories()
-include_directories(include ${catkin_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${EIGEN3_INCLUDE_DIR})
+include_directories(${catkin_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${EIGEN3_INCLUDE_DIR})
 
-roslint_cpp()
+include_directories(${catkin_INCLUDE_DIRS})
 
-# include boost
-find_package(Boost REQUIRED)
-include_directories(${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIR})
-
-cmake_host_system_information(RESULT _host_name QUERY HOSTNAME)
-
-if(NOT _host_name MATCHES "jetson")
-    add_executable(depth_processor src/depth_processor.cpp)
-    target_link_libraries(depth_processor ${catkin_LIBRARIES})
-    add_dependencies(depth_processor ${catkin_EXPORTED_TARGETS})
-endif()
 
 

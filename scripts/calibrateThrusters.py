@@ -14,7 +14,7 @@ def main():
     rospy.init_node("calibrate_thrusters")
 
     ard = serial.Serial('/dev/ttyACM0', 9600, timeout=5)
-    pwmPub = rospy.Publisher('/command/pwm', PwmStamped, queue_size=1)
+    pwmPub = rospy.Publisher('command/pwm', PwmStamped, queue_size=1)
     
     pwmOffset = 40
     done = False
