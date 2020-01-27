@@ -4,7 +4,7 @@ from lib import ok
 import rospy
 import actionlib
 from riptide_msgs.msg import AcousticsCommand, ResetControls
-from sensor_msgs.msg import Imu
+from nav_msgs.msg import Odometry
 import riptide_controllers.msg
 from std_msgs.msg import Float32
 import math
@@ -189,7 +189,7 @@ def initFPGA():
 
 
 def turn(angle):
-    quat = rospy.wait_for_message("imu/data", Imu).orientation
+    quat = rospy.wait_for_message("odometry/filtered", Odometry).pose.pose.orientation
     quat = [quat.x, quat.y, quat.z, quat.w]
     yaw = euler_from_quaternion(quat)[2] * 180 / math.pi
     resetPub.publish(False)
