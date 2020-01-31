@@ -26,13 +26,9 @@ generate_dynamic_reconfigure_options(
 )
 
 catkin_package(
-  INCLUDE_DIRS
-    include
   CATKIN_DEPENDS
     dynamic_reconfigure
 )
-include_directories(${catkin_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${EIGEN3_INCLUDE_DIR})
-
 include_directories(${catkin_INCLUDE_DIRS})
 
 
