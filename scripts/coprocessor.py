@@ -202,8 +202,8 @@ def main():
                                 depth_msg = Depth()
                                 depth_msg.header.stamp = rospy.Time.now()
                                 depth_msg.header.frame_id = rospy.get_namespace()[1:]+"pressure_link"
-                                depth_msg.depth = depth
-                                # TODO: Add variance
+                                depth_msg.depth = -depth
+                                depth_msg.variance = 0.000007
                                 depth_pub.publish(depth_msg)
 
                         elif command == 10: # switches command
