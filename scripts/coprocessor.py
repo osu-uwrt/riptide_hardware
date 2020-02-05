@@ -10,6 +10,7 @@ from std_msgs.msg import String, Header, Bool, Float32MultiArray, Int8
 from riptide_msgs.msg import Depth, PwmStamped, StatusLight, SwitchState
 from riptide_hardware.cfg import CoprocessorDriverConfig
 from dynamic_reconfigure.server import Server
+import yaml
 
 IP_ADDR = '192.168.1.42'
 copro = None
@@ -153,6 +154,9 @@ def main():
     connection_pub = rospy.Publisher('state/copro', Bool, queue_size=1)
     thruster_current_pub = rospy.Publisher('state/thruster_currents', Float32MultiArray, queue_size=1)
 
+    with open(rospy.get_param('vehicle_file'), 'r') as stream:
+        depthVariance = yaml.safe_load(stream)['depth']['sigma'] ** 2
+
     rospy.Subscriber('command/pwm', PwmStamped, pwm_callback)
     rospy.Subscriber('command/drop', Int8, drop_callback)
     rospy.Subscriber('command/arm', Bool, arm_callback)
@@ -203,7 +207,7 @@ def main():
                                 depth_msg.header.stamp = rospy.Time.now()
                                 depth_msg.header.frame_id = rospy.get_namespace()[1:]+"pressure_link"
                                 depth_msg.depth = -depth
-                                depth_msg.variance = 0.000007
+                                depth_msg.variance = depthVariance
                                 depth_pub.publish(depth_msg)
 
                         elif command == 10: # switches command
