@@ -180,7 +180,7 @@ def initFPGA():
 	fpga.SetTimeout(100)
 
 	rospy.loginfo("Configuring")
-	error = fpga.ConfigureFPGA(os.path.expanduser("~/osu-uwrt/riptide_software/src/puddles_hardware/assets/acoustics/output_file.rbf"))
+	error = fpga.ConfigureFPGA(os.path.expanduser("~/osu-uwrt/riptide_software/src/riptide_hardware/assets/acoustics/output_file.rbf"))
 	if error != ok.okCFrontPanel.NoError:
 		rospy.logerr("Failed to configure housing: " + ok.okCFrontPanel.GetErrorString(error))
 		return False
