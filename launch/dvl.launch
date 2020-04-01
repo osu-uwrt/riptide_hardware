@@ -1,16 +1,8 @@
 <launch>
-  <arg name="positions_file" value="$(find riptide_controllers)/cfg/vehicle_properties.yaml" />
-  <!-- Do I need to find device here? -->
-  
-  <!-- <remap from > -->
-  <node pkg="nortek_dvl" type="nortek_dvl" name="dvl" output="screen" >
-    <param name="address" type="string" value="uwrt-dvl" />
-    <param name="port" type="int" value="9004" />
-    <param name="dvl_rotation" type="double" value="0" />
-    <param name="dvl_topic" type="string" value="dvl" />
-    <param name="status_topic" type="string" value="status" />
-  </node>
-  <node pkg="riptide_hardware" type="dvl_processor" name="dvl_processor" output="screen">
-    <param name="properties_file" type="string" value="$(arg positions_file)" />
-  </node>
+  <arg name="robot" default="puddles" doc="Name of the vehicle"/>
+
+  <include file="$(find nortek_dvl)/launch/dvl.launch">
+    <arg name="frame_id" value="$(arg robot)/dvl_link" />
+    <arg name="sonar_frame_id" value="$(arg robot)/dvl_sonar%d_link" />
+  </include>
 </launch>

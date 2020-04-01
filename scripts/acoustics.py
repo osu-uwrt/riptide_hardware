@@ -3,13 +3,15 @@
 from lib import ok
 import rospy
 import actionlib
-from riptide_msgs.msg import AcousticsCommand, Imu, ResetControls
+from riptide_msgs.msg import AcousticsCommand, ResetControls
+from nav_msgs.msg import Odometry
 import riptide_controllers.msg
 from std_msgs.msg import Float32
 import math
 import numpy as np
 import cv2
 import os
+from tf.transformations import euler_from_quaternion
 
 fpga = None
 
@@ -178,7 +180,7 @@ def initFPGA():
 	fpga.SetTimeout(100)
 
 	rospy.loginfo("Configuring")
-	error = fpga.ConfigureFPGA(os.path.expanduser("~/osu-uwrt/riptide_software/src/puddles_hardware/assets/acoustics/output_file.rbf"))
+	error = fpga.ConfigureFPGA(os.path.expanduser("~/osu-uwrt/riptide_software/src/riptide_hardware/assets/acoustics/output_file.rbf"))
 	if error != ok.okCFrontPanel.NoError:
 		rospy.logerr("Failed to configure housing: " + ok.okCFrontPanel.GetErrorString(error))
 		return False
@@ -187,7 +189,9 @@ def initFPGA():
 
 
 def turn(angle):
-    imu = rospy.wait_for_message("/state/imu", Imu)
+    quat = rospy.wait_for_message("odometry/filtered", Odometry).pose.pose.orientation
+    quat = [quat.x, quat.y, quat.z, quat.w]
+    yaw = euler_from_quaternion(quat)[2] * 180 / math.pi
     resetPub.publish(False)
     client = actionlib.SimpleActionClient(
         "go_to_depth", riptide_controllers.msg.GoToDepthAction)
@@ -201,7 +205,7 @@ def turn(angle):
         "go_to_yaw", riptide_controllers.msg.GoToYawAction)
     client.wait_for_server()
 
-    client.send_goal(riptide_controllers.msg.GoToYawGoal(restrictAngle(imu.rpy_deg.z + angle)))
+    client.send_goal(riptide_controllers.msg.GoToYawGoal(restrictAngle(yaw + angle)))
     client.wait_for_result()
 
     rospy.sleep(1)
@@ -212,6 +216,6 @@ if __name__ == '__main__':
     global resetPub
     rospy.init_node("acoustics")
     if initFPGA():
-        resetPub = rospy.Publisher("/controls/reset", ResetControls, queue_size=1)
+        resetPub = rospy.Publisher("controls/reset", ResetControls, queue_size=1)
         rospy.Subscriber("command/acoustics", AcousticsCommand, commandCB)
         rospy.spin()

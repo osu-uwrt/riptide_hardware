@@ -1,8 +1,10 @@
 <launch>
+  <arg name="robot" default="puddles" />
   <include file="$(find riptide_hardware)/launch/coprocessor.launch" />
   <include file="$(find riptide_hardware)/launch/imu.launch" />
-  <include file="$(find riptide_hardware)/launch/depth_processor.launch" />
   <include file="$(find riptide_hardware)/launch/dvl.launch" />
-  <include file="$(find riptide_hardware)/launch/cameras_jetson.launch" />
+  <include file="$(find riptide_hardware)/launch/cameras_jetson.launch">
+    <arg name="robot" value="$(arg robot)" />
+  </include>
   <include file="$(find riptide_hardware)/launch/darknet_ros_jetson.launch" />
 </launch>

@@ -10,6 +10,7 @@ from std_msgs.msg import String, Header, Bool, Float32MultiArray, Int8
 from riptide_msgs.msg import Depth, PwmStamped, StatusLight, SwitchState
 from riptide_hardware.cfg import CoprocessorDriverConfig
 from dynamic_reconfigure.server import Server
+import yaml
 
 IP_ADDR = '192.168.1.42'
 copro = None
@@ -148,16 +149,19 @@ def main():
     rospy.init_node('coprocessor_driver')
 
     # add publishers
-    depth_pub = rospy.Publisher('/depth/raw', Depth, queue_size=1)
-    switch_pub = rospy.Publisher('/state/switches', SwitchState, queue_size=1)
-    connection_pub = rospy.Publisher('/state/copro', Bool, queue_size=1)
-    thruster_current_pub = rospy.Publisher('/state/thruster_currents', Float32MultiArray, queue_size=1)
+    depth_pub = rospy.Publisher('depth/raw', Depth, queue_size=1)
+    switch_pub = rospy.Publisher('state/switches', SwitchState, queue_size=1)
+    connection_pub = rospy.Publisher('state/copro', Bool, queue_size=1)
+    thruster_current_pub = rospy.Publisher('state/thruster_currents', Float32MultiArray, queue_size=1)
 
-    rospy.Subscriber('/command/pwm', PwmStamped, pwm_callback)
-    rospy.Subscriber('/command/drop', Int8, drop_callback)
-    rospy.Subscriber('/command/arm', Bool, arm_callback)
-    rospy.Subscriber('/command/fire', Int8, fire_callback)
-    rospy.Subscriber('/command/grabber', Int8, grab_callback)
+    with open(rospy.get_param('vehicle_file'), 'r') as stream:
+        depthVariance = yaml.safe_load(stream)['depth']['sigma'] ** 2
+
+    rospy.Subscriber('command/pwm', PwmStamped, pwm_callback)
+    rospy.Subscriber('command/drop', Int8, drop_callback)
+    rospy.Subscriber('command/arm', Bool, arm_callback)
+    rospy.Subscriber('command/fire', Int8, fire_callback)
+    rospy.Subscriber('command/grabber', Int8, grab_callback)
 
     Server(CoprocessorDriverConfig, reconfigure_callback)
     
@@ -201,7 +205,9 @@ def main():
                                 depth = depth / 100000.0
                                 depth_msg = Depth()
                                 depth_msg.header.stamp = rospy.Time.now()
-                                depth_msg.depth = depth
+                                depth_msg.header.frame_id = rospy.get_namespace()[1:]+"pressure_link"
+                                depth_msg.depth = -depth
+                                depth_msg.variance = depthVariance
                                 depth_pub.publish(depth_msg)
 
                         elif command == 10: # switches command
