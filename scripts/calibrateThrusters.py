@@ -14,7 +14,7 @@ def main():
     rospy.init_node("calibrate_thrusters")
 
     ard = serial.Serial('/dev/ttyACM0', 9600, timeout=5)
-    pwmPub = rospy.Publisher('/command/pwm', PwmStamped, queue_size=1)
+    pwmPub = rospy.Publisher('command/pwm', PwmStamped, queue_size=1)
     
     pwmOffset = 40
     done = False
@@ -37,7 +37,7 @@ def collect(offset):
     currentAvg = 0
     forceAvg = 0
     for i in range(10):
-        currentAvg += rospy.wait_for_message("/state/thruster_currents", Float32MultiArray).data[0]
+        currentAvg += rospy.wait_for_message("state/thruster_currents", Float32MultiArray).data[0]
         force = None
         ard.flushInput()
         ard.readline()

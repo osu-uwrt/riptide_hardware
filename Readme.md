@@ -10,10 +10,6 @@ This folder contains .yaml files with parameters needed by some of our ROS nodes
 
 # Source Code (src/)
 ## Active ROS Nodes
-### imu_processor
-This node reads in data from the imu_3dm_gx4 package, performs any necessary coordinate transformations, performs a heading-update calculation (since the IMU itself appears to have a small bug), and converts any units in radians to degrees.
-* Input Topics: /imu/filter, /imu/magnetic_field
-* Output Topics: /state/imu, /state/imu_verbose
 ### depth_processor
 This node reads in raw data from the depth sensor and applies an infinite-impulse response (IIR) low pass filter (LPF) to smooth the data.
 * Input Topics: /depth/raw
