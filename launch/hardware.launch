@@ -6,5 +6,4 @@
   <include file="$(find riptide_hardware)/launch/cameras_jetson.launch">
     <arg name="robot" value="$(arg robot)" />
   </include>
-  <include file="$(find riptide_hardware)/launch/darknet_ros_jetson.launch" />
 </launch>
