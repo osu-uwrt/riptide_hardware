@@ -12,7 +12,6 @@ find_package(catkin REQUIRED
     roscpp
     riptide_msgs
     geometry_msgs
-    pointgrey_camera_driver
     message_filters
     message_generation
     sensor_msgs
