@@ -1,8 +1,0 @@
-<launch>
-  <include file="$(find darknet_ros)/launch/darknet_ros.launch">
-    <arg name="yolo_weights_path" value="$(env HOME)/osu-uwrt/riptide_software/yolo_weights" />
-    <arg name="yolo_config_path" value="$(find riptide_hardware)/cfg" />
-    <arg name="ros_param_file" value="$(find riptide_hardware)/cfg/darknet_params.yaml"/>
-    <arg name="network_param_file" value="$(find riptide_hardware)/cfg/darknet_model.yaml"/>
-  </include>
-</launch>
