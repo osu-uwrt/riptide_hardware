@@ -1,0 +1,20 @@
+<launch>
+    <arg name="namespace" />
+    <arg name="camera_name" />
+    <arg name="frame_rate" default="30" />
+    <arg name="video_mode" default="format7_mode1" />
+    <!--mode0: Max res at 1288 x 964-->
+    <!--mode1: Half res at 644 x 482-->
+  
+    
+  
+    <include file="$(find mynteye_wrapper_d)/launch/mynteye.launch">
+        <arg name="framerate" value="$(arg frame_rate)" />
+        <arg name="color_mode" value="color_rectified" />
+        <arg name="stream_mode" value="stream_1280x480" />
+        <arg name="mynteye" value="stereo" />
+    </include>
+  
+  
+  </launch>
+  
