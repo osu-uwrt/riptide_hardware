@@ -36,5 +36,5 @@
     <arg name="serial_number" value="$(arg down_serial_number)" />
     <arg name="frame_rate" value="$(arg frame_rate)" />
   </include>
-  <node name="image_proc" pkg="image_proc" type="image_proc" ns="downward"/> -->
+  <node name="image_proc" pkg="image_proc" type="image_proc" ns="downward"/>
 </launch>
