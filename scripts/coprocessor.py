@@ -6,7 +6,7 @@ import select
 import traceback
 from threading import Thread
 from collections import deque
-from std_msgs.msg import String, Header, Bool, Float32MultiArray, Int8
+from std_msgs.msg import String, Header, Bool, Float32MultiArray, Int8, Float32
 from riptide_msgs.msg import Depth, PwmStamped, StatusLight, SwitchState
 from riptide_hardware.cfg import CoprocessorDriverConfig
 from dynamic_reconfigure.server import Server
@@ -27,6 +27,11 @@ depth_pub = None
 switch_pub = None
 connection_pub = None
 thruster_current_pub = None
+batVoltage_pub = None
+batCurrent_pub = None
+temperature_pub = None
+memory_pub = None
+temp_threshold_pub = None
 
 def connect(timeout):
     global copro
@@ -73,6 +78,18 @@ def depth_callback(event):
     if depth_pub.get_num_connections() > 0:
         enqueueCommand(11)
 
+def battery_voltage_callback(event):   
+    if batVoltage_pub.get_num_connections() > 0:
+        enqueueCommand(4)
+
+def battery_current_callback(event):   
+    if batCurrent_pub.get_num_connections() > 0:
+        enqueueCommand(5)
+
+def temperature_callback(event):   
+    if temperature_pub.get_num_connections() > 0:
+        enqueueCommand(6)
+
 def switch_callback(event):
     if switch_pub.get_num_connections() > 0:
         enqueueCommand(10)
@@ -80,6 +97,15 @@ def switch_callback(event):
 def thruster_current_callback(event):
     if thruster_current_pub.get_num_connections() > 0:
         enqueueCommand(12)
+
+def memory_callback(event):
+    if memory_pub.get_num_connections() > 0:
+        enqueueCommand(18)
+
+def temp_threshold_callback(event):
+    if temp_threshold_pub.get_num_connections() > 0:
+        enqueueCommand(19)
+
     
 def shutdown_copro():
     if connected:
@@ -143,6 +169,11 @@ def main():
     global switch_pub
     global connection_pub
     global thruster_current_pub
+    global batVoltage_pub
+    global batCurrent_pub
+    global temperature_pub
+    global memory_pub
+    global temp_threshold_pub
     global connected
     global buffer
 
@@ -153,6 +184,11 @@ def main():
     switch_pub = rospy.Publisher('state/switches', SwitchState, queue_size=1)
     connection_pub = rospy.Publisher('state/copro', Bool, queue_size=1)
     thruster_current_pub = rospy.Publisher('state/thruster_currents', Float32MultiArray, queue_size=1)
+    batVoltage_pub = rospy.Publisher('state/battery_voltage', Float32MultiArray, queue_size=1)
+    batCurrent_pub = rospy.Publisher('state/battery_current', Float32MultiArray, queue_size=1)
+    temperature_pub = rospy.Publisher('state/temperature', Float32, queue_size=1)
+    memory_pub = rospy.Publisher('state/memory_usage', Float32, queue_size=1)
+    temp_threshold_pub = rospy.Publisher('state/temp_threshold', Int8, queue_size=1)
 
     with open(rospy.get_param('vehicle_file'), 'r') as stream:
         depthVariance = yaml.safe_load(stream)['depth']['sigma'] ** 2
@@ -169,13 +205,18 @@ def main():
     rospy.Timer(rospy.Duration(0.05), depth_callback)
     rospy.Timer(rospy.Duration(0.2), switch_callback)
     rospy.Timer(rospy.Duration(0.2), thruster_current_callback)
+    rospy.Timer(rospy.Duration(1), battery_voltage_callback)
+    rospy.Timer(rospy.Duration(1), battery_current_callback)
+    rospy.Timer(rospy.Duration(0.5), temperature_callback)
+    rospy.Timer(rospy.Duration(1), memory_callback)
+    rospy.Timer(rospy.Duration(1), temp_threshold_callback)
 
     # 200 Hz rate for checking for messages to send
     rate = rospy.Rate(100)
     
     # set up clean shutdown
     rospy.on_shutdown(shutdown_copro)
-
+    
     last_kill_switch_state = False
     while not rospy.is_shutdown():
         if connected:
@@ -232,12 +273,49 @@ def main():
 
                                 switch_pub.publish(switch_msg)
 
-                        elif command == 12:
+                        elif command == 12:     # thruster currents
                             if len(response) != 8:
                                 print("Improper thruster current response: " + str(response))
                             else:
                                 current_msg = Float32MultiArray(data = [x/25.0 for x in response])
                                 thruster_current_pub.publish(current_msg)
+                 
+                        elif command == 4:     # battery voltage command
+                            if len(response) != 4:
+                                print("Improper battery voltage response: " + str(response))
+                            else: 
+                               port_volt = (response[0] *256.0 + response[1])/100.0
+                               stbd_volt = (response[2] *256.0 + response[3])/100.0
+                               batVoltage_pub.publish(Float32MultiArray(data = [port_volt, stbd_volt]))
+                            
+                        elif command == 5:     #battery current command
+                            if len(response) != 4:
+                                print("Improper battery current response: " + str(response))
+                            else:
+                                port_current = (response[0] *256.0 + response[1])/100.0
+                                stbd_current = (response[2] *256.0 + response[3])/100.0
+                                batCurrent_pub.publish(Float32MultiArray(data = [port_current, stbd_current]))
+                                
+                        elif command == 6:     # temperature command
+                            if len(response) != 2:
+                                print("Improper battery current response: " + str(response))
+                            else:
+                                temperature = (response[0]*256.0 + response[1])/10.0
+                                temperature_pub.publish(Float32(temperature))
+
+                        elif command == 18:
+                            if len(response) != 2:
+                                print("Improper memory usage response: " + str(response))
+                            else:
+                                memory = (response[0]*256.0 + response[1]*256.0)/(256*256-1)
+                                memory_pub.publish(Float32(memory))
+
+                        elif command == 19:
+                            if len(response) != 1:
+                                print("Improper temp threshold response: " + str(response))
+                            else:
+                                temp_threshold = int(response[0])
+                                temp_threshold_pub.publish(temp_threshold)
 
                         # can add the responses for other commands here in the future
 
