@@ -1,5 +1,5 @@
 <launch>
-  <machine address="jetson" name="jetson" user="ros" env-loader="~/osu-uwrt/riptide_software/src/riptide_utilities/baycat_master.sh"/>
+  <machine address="jetson" name="jetson" user="ros" env-loader="~/osu-uwrt/riptide_setup/scripts/ros_scripts/baycat_master.sh"/>
 	<arg name="machine_name" default="jetson"/>
 
   <arg name="robot" default="puddles" />
