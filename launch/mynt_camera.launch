@@ -1,5 +1,7 @@
 <launch>
-    <arg name="namespace" default="puddles" />
+
+    <arg name="robot" default="puddles" />
+    <arg name="vision_computer" default="local" />
     <arg name="dev_index" default="0" />
     <arg name="name" default="stereo" />
 
@@ -73,15 +75,15 @@
     <arg name="gravity" default="9.8" />
   
     <!-- Node params -->
-    <arg name="base_frame"    default="$(arg namespace)/$(arg name)/base_link" />
+    <arg name="base_frame"    default="$(arg robot)/$(arg name)/base_link" />
   
-    <arg name="left_frame"   default="$(arg namespace)/$(arg name)/left_optical" />
-    <arg name="right_frame"  default="$(arg namespace)/$(arg name)/right_optical" />
-    <arg name="depth_frame"   default="$(arg namespace)/$(arg name)/left_optical" />
-    <arg name="points_frame"  default="$(arg namespace)/$(arg name)/left_optical" />
-    <arg name="imu_frame"     default="$(arg namespace)/$(arg name)/imu_link" />
-    <arg name="temp_frame"    default="$(arg namespace)/$(arg name)/imu_link" />
-    <arg name="imu_frame_processed"     default="$(arg namespace)/$(arg name)/imu_link" />
+    <arg name="left_frame"   default="$(arg robot)/$(arg name)/left_optical" />
+    <arg name="right_frame"  default="$(arg robot)/$(arg name)/right_optical" />
+    <arg name="depth_frame"   default="$(arg robot)/$(arg name)/left_optical" />
+    <arg name="points_frame"  default="$(arg robot)/$(arg name)/left_optical" />
+    <arg name="imu_frame"     default="$(arg robot)/$(arg name)/imu_link" />
+    <arg name="temp_frame"    default="$(arg robot)/$(arg name)/imu_link" />
+    <arg name="imu_frame_processed"     default="$(arg robot)/$(arg name)/imu_link" />
   
     <!-- left topics -->
     <arg name="left_mono_topic"  default="$(arg name)/left/image_mono" />
@@ -102,7 +104,7 @@
     
     <arg name="mesh_file" default="D-0315.obj" />
   
-    <node name="mynteye_wrapper_d_node" pkg="mynteye_wrapper_d" type="mynteye_wrapper_d_node" output="screen">
+    <node machine="$(arg vision_computer)" name="mynteye_wrapper_d_node" pkg="mynteye_wrapper_d" type="mynteye_wrapper_d_node" output="screen">
   
       <!-- Camera params -->
       <param name="dev_index"     value="$(arg dev_index)" />
@@ -153,8 +155,8 @@
       <param name="mesh_file" value="$(arg mesh_file)" />
     </node>
 
-    <node name="image_proc" pkg="image_proc" type="image_proc" ns="$(arg name)/left"/>
-    <node name="image_proc" pkg="image_proc" type="image_proc" ns="$(arg name)/right"/>
+    <node machine="$(arg vision_computer)" name="image_proc" pkg="image_proc" type="image_proc" ns="$(arg name)/left"/>
+    <node machine="$(arg vision_computer)" name="image_proc" pkg="image_proc" type="image_proc" ns="$(arg name)/right"/>
   
     <!-- disable compressed depth plugin for image topics -->
     <group ns="$(arg left_mono_topic)">
