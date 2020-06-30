@@ -8,7 +8,7 @@
   <arg name="frame_rate" default="30" />
   <arg name="video_mode" default="format7_mode1" />
 
-  <arg name="root_path" value="$(dirname)/../.." unless="$(eval arg('vision_computer') != 'local')"/>
+  <arg name="root_path" value="$(find riptide_hardware)/launch/../.." unless="$(eval arg('vision_computer') != 'local')"/>
   <arg name="root_path" value="$(env OSU_UWRT_PATH)" if="$(eval arg('vision_computer') != 'local')" />
   <arg name="config_path" value="$(arg root_path)/riptide_hardware/cfg"/> 
 
