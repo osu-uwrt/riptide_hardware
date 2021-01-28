@@ -160,7 +160,14 @@ def drop_callback(msg):
     else:
         enqueueCommand(16, [208])
 
-
+def lighting_callback(msg):
+    if len(msg.data) != 2:
+        print("Invalid lighting request")
+    elif msg.data[0] < 0 or msg.data[0] > 1 or msg.data[1] < 0 or msg.data[1] > 1:
+        print("Invalid range for lighting request")
+    else:
+        lighting_args = [round(msg.data[0] * 100), round(msg.data[1] * 100)]
+        enqueueCommand(1, args=lighting_args)
     
 
 def main():
@@ -194,6 +201,7 @@ def main():
         depthVariance = yaml.safe_load(stream)['depth']['sigma'] ** 2
 
     rospy.Subscriber('command/pwm', PwmStamped, pwm_callback)
+    rospy.Subscriber('command/lighting', Float32MultiArray, lighting_callback)
     rospy.Subscriber('command/drop', Int8, drop_callback)
     rospy.Subscriber('command/arm', Bool, arm_callback)
     rospy.Subscriber('command/fire', Int8, fire_callback)
@@ -257,12 +265,8 @@ def main():
                             else:
                                 switch_msg = SwitchState()
                                 switch_msg.header.stamp = rospy.Time.now()
-                                switch_msg.kill = True if response[0] & 32 else False
-                                switch_msg.sw1 = True if response[0] & 16 else False
-                                switch_msg.sw2 = True if response[0] & 8 else False
-                                switch_msg.sw3 = True if response[0] & 4 else False
-                                switch_msg.sw4 = True if response[0] & 2 else False
-                                switch_msg.sw5 = True if response[0] & 1 else False
+                                switch_msg.kill = True if response[0] & 2 else False
+                                switch_msg.sw1 = True if response[0] & 1 else False
 
                                 if last_kill_switch_state is not switch_msg.kill:
                                     if switch_msg.kill:
@@ -316,6 +320,16 @@ def main():
                             else:
                                 temp_threshold = int(response[0])
                                 temp_threshold_pub.publish(temp_threshold)
+
+                        elif command == 7:     # pwm (thruster force) command
+                            if len(response) != 1:
+                                print("Invalid thruster force response")
+                            elif response[0] == 0:
+                                print("Thruster command failed to run!")
+                            elif response[0] == 1:
+                                pass  # Thrusters command successfully executed
+                            else:
+                                print("Invalid thruster force response")
 
                         # can add the responses for other commands here in the future
 
