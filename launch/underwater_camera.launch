@@ -2,9 +2,17 @@
     http://wiki.ros.org/camera_calibration
   -->
 
+<!-- To change the settings of this camera, go into IE, 
+   hit download, enable activeX, set english, and then log in 
+
+   The camera has two streams. Settings can be changed in config
+   Stream 0 is high resolution: Can be 1080p at 25 FPS or 3 MegaPixel at 15 FPS.
+   Stream 1 is low resolution: Is at 25 FPS.
+-->
+
 
 <launch>
-   <arg name="fps" default="30" />
+   <arg name="fps" default="25" />
    <param name="start_time" command="date +'%d-%m-%Y_%Ih%Mm%S'"/>
 
    <include file="$(find video_stream_opencv)/launch/camera.launch" >
