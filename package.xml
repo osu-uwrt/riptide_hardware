@@ -42,6 +42,7 @@
   <run_depend>tf</run_depend>
   <run_depend>python-numpy</run_depend>
   <run_depend>python-opencv</run_depend>
+  <run_depend>video_stream_opencv</run_depend>
 
   <export>
   </export>
