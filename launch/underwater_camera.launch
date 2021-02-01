@@ -1,19 +1,29 @@
-<!-- To record: 
-   rosrun image_view video_recorder image:=/underwater_cam/image_rect_color _fps:=30 _filename:=output2.avi
-   -->
-
 <!-- To calibrate: 
     http://wiki.ros.org/camera_calibration
   -->
 
+
 <launch>
+   <arg name="fps" default="30" />
+   <param name="start_time" command="date +'%d-%m-%Y_%Ih%Mm%S'"/>
+
    <include file="$(find video_stream_opencv)/launch/camera.launch" >
         <arg name="camera_name" value="underwater_cam" />
-        <arg name="set_camera_fps" value="30"/>
-        <arg name="fps" value="30" />
-        <arg name="video_stream_provider" value="rtsp://192.168.1.10:554/user=admin_password=6QNMIQGe_channel=1_stream=1.sdp?real_stream" />
+        <arg name="set_camera_fps" value="$(arg fps)"/>
+        <arg name="fps" value="$(arg fps)" />
+        <arg name="video_stream_provider" value="rtsp://192.168.1.10:554/user=admin_password=6QNMIQGe_channel=0_stream=0.sdp?real_stream" />
         <arg name="camera_info_url" value="file:///$(find riptide_hardware)/cfg/underwater_cam.yaml" />
    </include>
+
+   <node pkg="image_view" type="video_recorder" name="video_record_underwater_cam" output="screen">
+      <param name="fps" value="$(arg fps)" />
+      <param name="filename" command="bash -c 'printf &quot;${HOME}/underwater_cam_%(%Y-%m-%d-%I-%M-%S)T.avi&quot;'" />
+      <remap from="/image" to="/underwater_cam/image_raw"/>
+   </node>
+
+   <!-- 
+      If you want to rectify the image
    <node name="image_proc" pkg="image_proc" type="image_proc" ns="underwater_cam"/>
+   -->
 
 </launch>
