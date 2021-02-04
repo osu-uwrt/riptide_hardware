@@ -10,6 +10,8 @@
    Stream 1 is low resolution: Is at 25 FPS.
 -->
 
+<!-- Ensure the drive you are saving to is not FAT32 -->
+
 
 <launch>
    <arg name="fps" default="25" />
@@ -25,9 +27,11 @@
 
    <node pkg="image_view" type="video_recorder" name="video_record_underwater_cam" output="screen">
       <param name="fps" value="$(arg fps)" />
-      <param name="filename" command="bash -c 'printf &quot;${HOME}/underwater_cam_%(%Y-%m-%d-%I-%M-%S)T.avi&quot;'" />
+      <param name="filename" command="bash -c 'printf &quot;/media/blaine/DATA/underwater_cam_%(%Y-%m-%d-%I-%M-%S)T.avi&quot;'" />
       <remap from="/image" to="/underwater_cam/image_raw"/>
    </node>
+
+   <node pkg="rosservice" type="rosservice" name="set_logger_level" args="call /video_record_underwater_cam/set_logger_level '{logger: 'ros', level: 'ERROR'}'"/>
 
    <!-- 
       If you want to rectify the image
