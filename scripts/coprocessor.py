@@ -6,7 +6,7 @@ import select
 import traceback
 from threading import Thread
 from collections import deque
-from std_msgs.msg import String, Header, Bool, Float32MultiArray, Int8, Float32
+from std_msgs.msg import String, Header, Bool, Float32MultiArray, Int8, Float32, Int16MultiArray
 from riptide_msgs.msg import Depth, PwmStamped, StatusLight, SwitchState
 from riptide_hardware.cfg import CoprocessorDriverConfig
 from dynamic_reconfigure.server import Server
@@ -64,14 +64,14 @@ def pwm_callback(pwm_message):
     global response_queue
 
     args = []
-    args += toBytes(pwm_message.pwm.heave_stbd_aft)
-    args += toBytes(pwm_message.pwm.heave_stbd_fwd)
-    args += toBytes(pwm_message.pwm.vector_stbd_fwd)
-    args += toBytes(pwm_message.pwm.vector_stbd_aft)
-    args += toBytes(pwm_message.pwm.heave_port_fwd)
-    args += toBytes(pwm_message.pwm.heave_port_aft)
-    args += toBytes(pwm_message.pwm.vector_port_fwd)
-    args += toBytes(pwm_message.pwm.vector_port_aft)
+    args += toBytes(pwm_message.data[0])
+    args += toBytes(pwm_message.data[1])
+    args += toBytes(pwm_message.data[2])
+    args += toBytes(pwm_message.data[3])
+    args += toBytes(pwm_message.data[4])
+    args += toBytes(pwm_message.data[5])
+    args += toBytes(pwm_message.data[6])
+    args += toBytes(pwm_message.data[7])
     enqueueCommand(7, args)
     
 def depth_callback(event):
@@ -193,7 +193,7 @@ def main():
     with open(rospy.get_param('vehicle_file'), 'r') as stream:
         depthVariance = yaml.safe_load(stream)['depth']['sigma'] ** 2
 
-    rospy.Subscriber('command/pwm', PwmStamped, pwm_callback)
+    rospy.Subscriber('command/pwm', Int16MultiArray, pwm_callback)
     rospy.Subscriber('command/drop', Int8, drop_callback)
     rospy.Subscriber('command/arm', Bool, arm_callback)
     rospy.Subscriber('command/fire', Int8, fire_callback)
