@@ -1,5 +1,4 @@
-pub_rate: 1.0 # Optional
-base_path: '' # Optional, prepended to all diagnostic output
+pub_rate: 1.0
 analyzers:
   computers:
     type: diagnostic_aggregator/GenericAnalyzer
