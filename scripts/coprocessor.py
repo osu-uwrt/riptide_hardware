@@ -12,7 +12,9 @@ from riptide_hardware.cfg import CoprocessorDriverConfig
 from dynamic_reconfigure.server import Server
 import yaml
 
-IP_ADDR = '192.168.1.42'
+PUDDLES_ROBOT = 1
+TITAN_ROBOT = 2
+
 copro = None
 connected = False
 # only add byte arrays to this queue
@@ -160,13 +162,18 @@ def drop_callback(msg):
     else:
         enqueueCommand(16, [208])
 
-def lighting_callback(msg):
-    if len(msg.data) != 2:
-        print("Invalid lighting request")
-    elif msg.data[0] < 0 or msg.data[0] > 1 or msg.data[1] < 0 or msg.data[1] > 1:
+def light1_callback(msg):
+    if msg.data < 0 or msg.data > 100:
         print("Invalid range for lighting request")
     else:
-        lighting_args = [round(msg.data[0] * 100), round(msg.data[1] * 100)]
+        lighting_args = [1, msg.data]
+        enqueueCommand(1, args=lighting_args)
+
+def light2_callback(msg):
+    if msg.data < 0 or msg.data > 100:
+        print("Invalid range for lighting request")
+    else:
+        lighting_args = [2, msg.data]
         enqueueCommand(1, args=lighting_args)
     
 
@@ -183,8 +190,17 @@ def main():
     global temp_threshold_pub
     global connected
     global buffer
+    global IP_ADDR
+    global current_robot
 
     rospy.init_node('coprocessor_driver')
+
+    current_robot = rospy.get_param('current_robot')
+
+    if current_robot == PUDDLES_ROBOT:
+        IP_ADDR = '192.168.1.42'
+    elif current_robot == TITAN_ROBOT:
+        IP_ADDR = '192.168.1.43'
 
     # add publishers
     depth_pub = rospy.Publisher('depth/raw', Depth, queue_size=1)
@@ -201,7 +217,9 @@ def main():
         depthVariance = yaml.safe_load(stream)['depth']['sigma'] ** 2
 
     rospy.Subscriber('command/pwm', PwmStamped, pwm_callback)
-    rospy.Subscriber('command/lighting', Float32MultiArray, lighting_callback)
+    if current_robot == TITAN_ROBOT:
+        rospy.Subscriber('command/light1', Int8, light1_callback)
+        rospy.Subscriber('command/light2', Int8, light2_callback)
     rospy.Subscriber('command/drop', Int8, drop_callback)
     rospy.Subscriber('command/arm', Bool, arm_callback)
     rospy.Subscriber('command/fire', Int8, fire_callback)
