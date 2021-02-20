@@ -59,21 +59,42 @@ CONN_STATE_UNCONFIGURED = -1
 CONN_STATE_DISCONNECTED = 0
 CONN_STATE_CONNECTING = 1
 CONN_STATE_CONNECTED = 2
-CONN_STATE_SHUTDOWN = 3
+CONN_STATE_CLOSING = 3
+CONN_STATE_SHUTDOWN = 4
 
 class BaseCoproCommand:
     def __init__(self, driver):
+        """Initializes the Command and registers it with the CoproDriver
+
+        Args:
+            driver (CoproDriver): The instance of CoproDriver to register the command with
+        """
         self.driver = driver
         self.driver.registerCommand(self)
 
     def getCommandId(self):
+        """The command id for the class
+        """
         raise NotImplementedError()
 
     def commandCallback(self, response):
+        """The callback for after a command has been executed
+
+        Args:
+            response (list): An integer list of the response from the copro
+        """
         raise NotImplementedError()
 
 
 def toBytes(num):
+    """Converts 16-bit integer to 8-bit integer array
+
+    Args:
+        num (int): A 16-bit integer
+
+    Returns:
+        list: An 8-bit integer list
+    """
     return [num // 256, num % 256]
 
 
@@ -434,6 +455,7 @@ class ActuatorCommand(BaseCoproCommand):
     def __init__(self, driver):
         BaseCoproCommand.__init__(self, driver)
 
+        # This queue is used to determine which actuator subcommand was sent for the callback
         self.response_queue = deque([], 50)
 
         rospy.Subscriber('command/drop', Int8, self.drop_callback)
@@ -543,36 +565,91 @@ class ActuatorCommand(BaseCoproCommand):
 
 
 class CoproDriver:
+    # The general timeout, used for connecting and for connection stalls
+    TIMEOUT = 2.0
+
+    # The IP address to use to connect
     IP_ADDR = None
+
+    # The ros publisher for the copro connection state
     connection_pub = None
+
+    # The config parameter passed with the current robot
     current_robot = None
+
+    # The instance of the ActuatorCommander, used 
     actuatorCommander = None
 
     def __init__(self):
+        """Initializes new instance of CoproDriver class
+        """
+
+        # The registered commands with the command id as the key and BaseCoproCommand implementation as value
+        # Should only be written by registerCommand and deregisterCommand
+        self.registered_commands = {}
+
+        ########################################
+        ### Note: These variables should only be interacted with by Connection Management Code
+
+        # The socket connection to copro
         self.copro = None
+
+        # The buffer of data received from copro, keeps track of partially received messages
+        self.buffer = []
+
+        # The time when writes stalled, or 0 if not stalled
+        self.connection_stall_time = 0
+
+        # The start time of a tcp connection to allow for timeouts without blocking
+        self.connection_start = 0
+        ########################################
+
+
+        # The state of the copro socket connection
+        # Should only be used by class methods
         self.connection_state = CONN_STATE_DISCONNECTED
         self.prev_connection_state = CONN_STATE_UNCONFIGURED
+
+
+        ########################################
+        # Note: These variables should only be written by class methods protected by command_lock
+
+        # The lock on the command queue, prevents commands from being processed out of order (...even though it's single threaded)
+        self.command_lock = Lock()
+
+        # The command queue for communicating with copro
         # only add byte arrays to this queue
         self.command_queue = deque([], 50)
         # after appending command to command_queue,
         # append the command id to the response queue
         self.response_queue = deque([], 50)
-        self.buffer = []
-        self.registered_commands = {}
+        ########################################
 
-        self.command_lock = Lock()
+
+
+    ########################################
+    # Connection Management Code           #
+    ########################################
 
     def connect(self):
+        """Starts tcp connection with copro
+        Should only be called from copro comm task
+        """
         try:
+            # Start the connection, don't block
             self.copro = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.copro.setblocking(False)
             err = self.copro.connect_ex((self.IP_ADDR, 50000))
+
             if err == errno.EINPROGRESS:
+                # Connect in progress, keep track of time for asynchronous timeouts
                 self.connection_state = CONN_STATE_CONNECTING
                 self.connection_start = time.time()
             elif err == 0:
+                # Connection succeeded
                 self.connection_state = CONN_STATE_CONNECTED
             else:
+                # Some error occurred, close socket
                 self.connection_state = CONN_STATE_DISCONNECTED
                 self.copro.close()
                 self.copro = None
@@ -580,11 +657,24 @@ class CoproDriver:
             self.connection_state = CONN_STATE_DISCONNECTED
             self.copro = None
 
-    def check_async_connect(self, timeout=2.0):
+    def check_async_connect(self, timeout):
+        """Called to update a connecting connection for a response or time out
+        Can be called only during connecting state
+        Should only be called from copro comm task
+
+        Args:
+            timeout (float): The timeout for the connection
+
+        Raises:
+            RuntimeError: Raised if method called when the connection state isn't CONN_STATE_CONNECTING
+        """
         if self.connection_state != CONN_STATE_CONNECTING:
             raise RuntimeError("Called check async connect when connection not waiting")
+
         try:
             readable, writable,_ = select.select([self.copro], [self.copro], [], 0)
+
+            # If there is data available, then read the error state
             if self.copro in readable or self.copro in writable:
                 err = self.copro.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
                 if err == 0:
@@ -594,6 +684,7 @@ class CoproDriver:
                     self.copro.close()
                     self.copro = None
             else:
+                # If no data available, check if connection timed out
                 if time.time() - self.connection_start >= timeout:
                     self.connection_state = CONN_STATE_DISCONNECTED
                     self.copro.close()
@@ -606,86 +697,217 @@ class CoproDriver:
                 pass
             self.copro = None
 
+    def closeConnection(self, keep_shutdown):
+        """Closes the connection to the copro
+        Can be called in any state
+        Should only be called from copro comm task
+
+        Args:
+            keep_shutdown (bool): If the connection should remain closed and not restart
+        """
+        # If the socket is still active, clean it up
+        if self.copro is not None:
+            try:
+                if self.connection_state == CONN_STATE_CONNECTED:
+                    self.connection_state = CONN_STATE_CLOSING
+                    # Stop thrusters
+                    rospy.loginfo("Stopping thrusters")
+                    self.copro.setblocking(False)
+                    try:
+                        self.copro.sendall(bytearray([18, 7, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220]))
+                        self.copro.sendall(bytearray([0]))
+                    except:
+                        pass
+                    self.copro.shutdown(socket.SHUT_RDWR)
+                self.copro.close()
+            except Exception as e:
+                traceback.print_exc()
+                rospy.logerr("Error during connection close: " + str(e))
+        
+        # Reset instance variables
+        self.copro = None
+        self.command_queue.clear()
+        self.response_queue.clear()
+        self.actuatorCommander.response_queue.clear()
+        self.buffer = []
+
+        # Set the state depending on if shutdown is needed
+        if keep_shutdown:
+            self.connection_state = CONN_STATE_SHUTDOWN
+        else:
+            self.connection_state = CONN_STATE_DISCONNECTED
+        
+        # Notify of disconnect
+        self.connection_pub.publish(False)
+
+    def doCoproCommunication(self):
+        """Sends any pending commands to copro and processes any data returned
+        """
+        with self.command_lock:
+            readable, writable, exceptional = select.select([self.copro], [self.copro], [self.copro], 0)
+
+            # Handle outgoing packets if there is room in send buffer
+            if len(writable) > 0:
+                if len(self.command_queue) > 0:
+                    command = []
+                    while len(self.command_queue) != 0:
+                        command += self.command_queue.popleft()
+                    self.copro.sendall(bytearray(command))
+
+            # Handle incoming packets if there is data in receive buffer
+            if len(readable) > 0:
+                # Receive all data until the connection blocks
+                try:
+                    self.copro.setblocking(False)
+                    while True:
+                        recv_data = self.copro.recv(64)
+
+                        # Length of zero from recv means EOF, so socket was shutdown
+                        if len(recv_data) == 0:
+                            self.connection_state = CONN_STATE_CLOSING
+                            self.closeConnection(False)
+                            return
+
+                        # If this is running in python 2, it will return a string rather than bytes, so convert to int list
+                        if not isinstance(recv_data[0], int):
+                            recv_data = list(map(ord, recv_data))
+                        self.buffer += recv_data
+                except BlockingIOError:
+                    pass
+                
+                # Continue processing buffer until the buffer doesn't containe the
+                # whole the length (first byte) of the packet or the buffer is empty
+                while len(self.buffer) > 0 and self.buffer[0] <= len(self.buffer):
+                    # Decode packet - The first byte is length, remaining is data
+                    response = self.buffer[1:self.buffer[0]]
+
+                    # Retrieve the command id of this message
+                    command = self.response_queue.popleft()
+
+                    # The copro connection will return an empty packet if it failed to execute the command
+                    # If this is the case, don't execute the callback, and instead log error
+                    if len(response) == 0:
+                        rospy.logwarn("Command error on command "+str(command))
+
+                        # If the command is for the actuator, remove the subcommand from queue to keep
+                        # it lined up since the actuator callback isn't called on command error
+                        if command == self.actuatorCommander.getCommandId():
+                            self.actuatorCommander.response_queue.popleft()
+                    
+                    # Execute command if callback available for it
+                    elif command in self.registered_commands:
+                        self.registered_commands[command].commandCallback(response)
+                    else:
+                        rospy.logerr("Unhandled Command Response from Copro: %d", command)
+
+                    # Remove the processed command from the receive buffer
+                    self.buffer = self.buffer[self.buffer[0]:]
+            
+            # Check for stalls
+            # If the either queue is full, that means that either the send buffer is full (copro didn't ack any packets yet)
+            # or the coporo is waiting for responses to commands, and it has backed up the queue. Either way, the copro hasn't
+            # done any activity in a while, which could mean that the copro has reset and didn't drop the connection. To prevent
+            # an infinite stall, a timeout is implemented if this condition occurs. 
+            if len(self.command_queue) == self.command_queue.maxlen or len(self.response_queue) == self.response_queue.maxlen:
+                if self.connection_stall_time == 0:
+                    self.connection_stall_time = time.time()
+
+                if time.time() - self.connection_stall_time > self.TIMEOUT:
+                    self.closeConnection(False)
+                    self.connection_stall_time = 0
+            else:
+                # If the queue isn't full, and it previously was (stall_time != 0), then there was activity
+                # and the copro is still alive
+                self.connection_stall_time = 0
+
+
+
+    ########################################
+    # Public Methods                       #
+    ########################################
+
     def enqueueCommand(self, command, args = []):
+        """Adds command to queue to be sent to copro
+
+        Args:
+            command (int): The command ID to be sent
+            args (list, optional): Int list of arguments to provide with command. Defaults to [].
+
+        Returns:
+            bool: If the command was successfully queued
+        """
         if self.connection_state != CONN_STATE_CONNECTED:
             return False
 
-        self.command_lock.acquire()
-        data = [command] + args
-        data = [len(data) + 1] + data
-        if (len(self.command_queue) + len(data)) <= self.command_queue.maxlen and (len(self.response_queue)+1) <= self.response_queue.maxlen:
-            self.command_queue.append(data)
-            self.response_queue.append(command)
-            self.command_lock.release()
-            return True
-        else:
-            rospy.logwarn_throttle(5, "Copro commands dropped: Command Buffer Full")
-            self.command_lock.release()
-            return False
+        # This command lock is strange
+        # Although ros is single threaded, if this isn't implemented and there are a lot of commands being queued
+        # at the same time, a race condition like problem occurs, where the data for one command sometimes gets
+        # swapped with the data for another command sent at the same time.
+        with self.command_lock:
+            # Command Pakcet Format
+            # Byte 0: Length (Including length byte)
+            # Byte 1: Command ID
+            # Byte 2-n: Args
+            data = [command] + args
+            data = [len(data) + 1] + data
+
+            # Make sure that there is enough space in the queues to prevent data from becoming desynced
+            if (len(self.command_queue) + len(data)) <= self.command_queue.maxlen and (len(self.response_queue)+1) <= self.response_queue.maxlen:
+                self.command_queue.append(data)
+                self.response_queue.append(command)
+                return True
+            else:
+                rospy.logwarn_throttle(5, "Copro commands dropped: Command Buffer Full")
+                return False
 
     def registerCommand(self, receiver):
+        """Registers a receiver to process a command
+
+        Args:
+            receiver (BaseCoproCommand): Instance of BaseCoproCommand that will be called with the specific command id
+
+        Raises:
+            RuntimeError: Raised if the command id is already registered
+        """
         if receiver.getCommandId() in self.registered_commands:
             raise RuntimeError("Command already registered")
         self.registered_commands[receiver.getCommandId()] = receiver
 
     def deregisterCommand(self, receiver):
+        """Removes the receiver from processing commands
+
+        Args:
+            receiver (BaseCoproCommand): Instance of BaseCoproCommand to be deregistered
+
+        Raises:
+            KeyError: Raised if the specific command id isn't registered
+            ValueError: Raised if the registered receiver is not the receiver passed to the function
+        """
         if receiver.getCommandId() not in self.registered_commands:
             raise KeyError("Command not registered")
         if self.registered_commands[receiver.getCommandId()] != receiver:
             raise ValueError("The requested command to deregister is not currently registered")
         del self.registered_commands[receiver.getCommandId()]
 
-    def shutdown_copro(self, keep_shutdown=True):
-        if self.connection_state == CONN_STATE_CONNECTED:
-            if keep_shutdown:
-                self.connection_state = CONN_STATE_SHUTDOWN
-            else:
-                self.connection_state = CONN_STATE_DISCONNECTED
-            # Stop thrusters
-            rospy.loginfo("Stopping thrusters")
-            self.copro.sendall(bytearray([18, 7, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220]))
-            self.copro.sendall(bytearray([0]))
-            rospy.sleep(.1)
-            self.copro.close()
 
-    def doCoproCommunication(self):
-        readable, writable, exceptional = select.select([self.copro], [self.copro], [self.copro], 0)
 
-        if len(writable) > 0 and len(self.command_queue) > 0:
-            command = []
-            while len(self.command_queue) != 0:
-                command += self.command_queue.popleft()
-            self.copro.sendall(bytearray(command))
-        if len(readable) > 0:
-            recv_data = self.copro.recv(64)
-            if len(recv_data) == 0:
-                self.connection_state = CONN_STATE_DISCONNECTED
-                return
-            if not isinstance(recv_data[0], int):
-                recv_data = list(map(ord, recv_data))
-            self.buffer += recv_data
-            while len(self.buffer) > 0 and self.buffer[0] <= len(self.buffer):
-                response = self.buffer[1:self.buffer[0]]
-                command = self.response_queue.popleft()
-
-                if len(response) == 0:
-                    rospy.logwarn("Protocol error on command "+str(command))
-
-                    # If the command is for the actuator, remove the subcommand from queue to keep it lined up
-                    if command == self.actuatorCommander.getCommandId():
-                        self.actuatorCommander.response_queue.popleft()
-                elif command in self.registered_commands:
-                    self.registered_commands[command].commandCallback(response)
-                else:
-                    rospy.logerr("Unhandled Command Response from Copro: %d", command)
-
-                self.buffer = self.buffer[self.buffer[0]:]
+    ########################################
+    # Copro Communication Task             #
+    ########################################
 
     def coproCommTask(self, event):
+        """Manages the connection with the copro
+        Should only be called from Timer callback
+
+        Args:
+            event (rospy.TimerEvent): The timer event for this call
+        """
         if self.connection_state == CONN_STATE_SHUTDOWN:
             return
+
         elif self.connection_state == CONN_STATE_CONNECTED:
             self.connection_pub.publish(True)
+
             if self.prev_connection_state != CONN_STATE_CONNECTED:
                 # Code to run once on connect
                 rospy.loginfo("Connected to copro!")
@@ -704,19 +926,22 @@ class CoproDriver:
             except Exception as e:
                 traceback.print_exc()
                 rospy.logerr("Exception Occurred: " + str(e))
-                self.command_queue.clear()
-                self.response_queue.clear()
-                self.actuatorCommander.response_queue.clear()
-                self.buffer = []
-                try:
-                    self.shutdown_copro(False)
-                except:
-                    pass
-                self.copro = None
+                self.closeConnection(False)
+
         elif self.connection_state == CONN_STATE_CONNECTING:
             self.prev_connection_state = self.connection_state
             self.connection_pub.publish(False)
-            self.check_async_connect(timeout=2.0)
+            self.check_async_connect(timeout=self.TIMEOUT)
+
+        elif self.conneciton_state == CONN_STATE_CLOSING:
+            # The CONN_STATE_CLOSING state should only be used right before the connection is closed
+            # If this state is reached during the main connection processing loop, then closeConnection wasn't called
+            # when it should have been called
+            rospy.logerr("Socket in invalid state")
+            self.closeConnection(False)
+
+        # CONN_STATE_DISCONNECTED as well as catch all state. In the event it is in a state
+        # that isn't configured, reconnect in an attempt to recover the communication task
         else:
             if self.prev_connection_state == CONN_STATE_CONNECTED or self.prev_connection_state == CONN_STATE_UNCONFIGURED:
                 # Code to run once on disconnect
@@ -726,12 +951,28 @@ class CoproDriver:
             self.connection_state = CONN_STATE_DISCONNECTED
             self.connection_pub.publish(False)
             self.connect()
-            
-            
+
+
+
+    ########################################
+    # Main Methods                         #
+    ########################################
+
+    def onShutdown(self):
+        """Called when rospy is shutting down
+        Should only be called from on_shutdown callback
+        """
+        self.closeConnection(True)
 
     def main(self):
+        """Runs the coprocessor_driver ros node
+
+        Raises:
+            RuntimeError: Raised if the specified robot in the config is invalid
+        """
         rospy.init_node('coprocessor_driver')
 
+        # Load configuration values depending on current robot
         self.current_robot = rospy.get_param('current_robot')
 
         if self.current_robot == PUDDLES_ROBOT:
@@ -761,7 +1002,7 @@ class CoproDriver:
         self.actuatorCommander = ActuatorCommand(self)
                 
         # set up clean shutdown
-        rospy.on_shutdown(self.shutdown_copro)
+        rospy.on_shutdown(self.onShutdown)
 
         # Setup monitoring task
         rospy.Timer(rospy.Duration(0.01), self.coproCommTask)
