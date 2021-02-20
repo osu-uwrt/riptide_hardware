@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 
+import errno
 import rospy
 import socket
 import select
+import time
 import traceback
 from threading import Thread, Lock
 from collections import deque
@@ -51,6 +53,12 @@ ACTUATOR_SET_GRIPPER_PWM_CMD = 7        # Implemented
 
 # Actuator command constant
 ACTUATOR_TRY_FAIL = 0xFF
+
+# Copro connection state constants
+CONN_STATE_UNCONFIGURED = -1
+CONN_STATE_DISCONNECTED = 0
+CONN_STATE_CONNECTING = 1
+CONN_STATE_CONNECTED = 2
 
 class BaseCoproCommand:
     def __init__(self, driver):
@@ -541,7 +549,8 @@ class CoproDriver:
 
     def __init__(self):
         self.copro = None
-        self.connected = False
+        self.connection_state = CONN_STATE_DISCONNECTED
+        self.prev_connection_state = CONN_STATE_UNCONFIGURED
         # only add byte arrays to this queue
         self.command_queue = deque([], 50)
         # after appending command to command_queue,
@@ -551,22 +560,53 @@ class CoproDriver:
         self.registered_commands = {}
 
         self.command_lock = Lock()
-        
 
-    def connect(self, timeout) :
+    def connect(self):
         try:
             self.copro = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.copro.settimeout(timeout)
-            self.copro.connect((self.IP_ADDR, 50000))
-            self.connected = True
-            return True
+            self.copro.setblocking(False)
+            err = self.copro.connect_ex((self.IP_ADDR, 50000))
+            if err == errno.EINPROGRESS:
+                self.connection_state = CONN_STATE_CONNECTING
+                self.connection_start = time.time()
+            elif err == 0:
+                self.connection_state = CONN_STATE_CONNECTED
+            else:
+                self.connection_state = CONN_STATE_DISCONNECTED
+                self.copro.close()
+                self.copro = None
         except:
-            self.connected = False
+            self.connection_state = CONN_STATE_DISCONNECTED
             self.copro = None
-            return False
+
+    def check_async_connect(self, timeout=2.0):
+        if self.connection_state != CONN_STATE_CONNECTING:
+            raise RuntimeError("Called check async connect when connection not waiting")
+        try:
+            readable, writable,_ = select.select([self.copro], [self.copro], [], 0)
+            if self.copro in readable or self.copro in writable:
+                err = self.copro.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+                if err == 0:
+                    self.connection_state = CONN_STATE_CONNECTED
+                else:
+                    self.connection_state = CONN_STATE_DISCONNECTED
+                    self.copro.close()
+                    self.copro = None
+            else:
+                if time.time() - self.connection_start >= timeout:
+                    self.connection_state = CONN_STATE_DISCONNECTED
+                    self.copro.close()
+                    self.copro = None
+        except Exception as e:
+            self.connection_state = CONN_STATE_DISCONNECTED
+            try:
+                self.copro.close()
+            except:
+                pass
+            self.copro = None
 
     def enqueueCommand(self, command, args = []):
-        if not self.connected:
+        if self.connection_state != CONN_STATE_CONNECTED:
             return False
 
         self.command_lock.acquire()
@@ -595,8 +635,8 @@ class CoproDriver:
         del self.registered_commands[receiver.getCommandId()]
 
     def shutdown_copro(self):
-        if self.connected:
-            self.connected = False
+        if self.connection_state == CONN_STATE_CONNECTED:
+            self.connection_state = CONN_STATE_DISCONNECTED
             # Stop thrusters
             rospy.loginfo("Stopping thrusters")
             self.copro.sendall(bytearray([18, 7, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220]))
@@ -615,7 +655,7 @@ class CoproDriver:
         if len(readable) > 0:
             recv_data = self.copro.recv(64)
             if len(recv_data) == 0:
-                self.connected = False
+                self.connection_state = CONN_STATE_DISCONNECTED
                 return
             if not isinstance(recv_data[0], int):
                 recv_data = list(map(ord, recv_data))
@@ -636,6 +676,52 @@ class CoproDriver:
                     rospy.logerr("Unhandled Command Response from Copro: %d", command)
 
                 self.buffer = self.buffer[self.buffer[0]:]
+
+    def coproCommTask(self):
+        if self.connection_state == CONN_STATE_CONNECTED:
+            self.connection_pub.publish(True)
+            if self.prev_connection_state != CONN_STATE_CONNECTED:
+                # Code to run once on connect
+                rospy.loginfo("Connected to copro!")
+                self.buffer = []
+                self.connection_pub.publish(True)
+                self.response_queue.clear()
+                self.command_queue.clear()
+                self.actuatorCommander.response_queue.clear()
+                if self.actuatorCommander.lastConfig is not None:
+                    self.actuatorCommander.reconfigure_callback(self.actuatorCommander.lastConfig, 0)
+
+            # Code to run repeatedly while copro is connected
+            try:
+                self.doCoproCommunication()
+            except Exception as e:
+                traceback.print_exc()
+                rospy.logerr("Exception Occurred: " + str(e))
+                self.command_queue.clear()
+                self.response_queue.clear()
+                self.actuatorCommander.response_queue.clear()
+                self.buffer = []
+                try:
+                    self.shutdown_copro()
+                except:
+                    pass
+                self.copro = None
+        elif self.connection_state == CONN_STATE_CONNECTING:
+            self.connection_pub.publish(False)
+            self.check_async_connect(timeout=2.0)
+        else:
+            if self.prev_connection_state != CONN_STATE_DISCONNECTED:
+                # Code to run once on disconnect
+                rospy.loginfo("Connecting to copro...")
+
+            self.connection_state = CONN_STATE_DISCONNECTED
+            self.connection_pub.publish(False)
+
+            self.connect()
+        
+        self.prev_connection_state = self.connection_state
+            
+            
 
     def main(self):
         rospy.init_node('coprocessor_driver')
@@ -667,47 +753,14 @@ class CoproDriver:
         if self.current_robot == TITAN_ROBOT:
             LightingCommand(self)
         self.actuatorCommander = ActuatorCommand(self)
-        
-        # 200 Hz rate for checking for messages to send
-        rate = rospy.Rate(100)
-        
+                
         # set up clean shutdown
         rospy.on_shutdown(self.shutdown_copro)
 
-        while not rospy.is_shutdown():
-            if self.connected:
-                try:
-                    self.doCoproCommunication()
-                except Exception as e:
-                    traceback.print_exc()
-                    rospy.logerr("Exception Occurred: " + str(e))
-                    self.command_queue.clear()
-                    self.response_queue.clear()
-                    self.actuatorCommander.response_queue.clear()
-                    self.buffer = []
-                    try:
-                        self.shutdown_copro()
-                    except:
-                        pass
-                    self.copro = None
-                    self.connected = False
-            else:
-                rospy.loginfo("Connecting to copro...")
-                while not self.connect(1.0):
-                    self.connection_pub.publish(False)
-                    if rospy.is_shutdown():
-                        return
-                rospy.loginfo("Connected to copro!")
-                
-                self.buffer = []
-                self.connection_pub.publish(True)
-                self.response_queue.clear()
-                self.command_queue.clear()
-                self.actuatorCommander.response_queue.clear()
-                if self.actuatorCommander.lastConfig is not None:
-                    self.actuatorCommander.reconfigure_callback(self.actuatorCommander.lastConfig, 0)
+        # Setup monitoring task
+        rospy.Timer(rospy.Duration(0.01), self.coproCommTask)
 
-            rate.sleep()
+        rospy.spin()
 
 if __name__ == '__main__':
     coproDriver = CoproDriver()
