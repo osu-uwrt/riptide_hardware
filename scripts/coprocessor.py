@@ -59,6 +59,7 @@ CONN_STATE_UNCONFIGURED = -1
 CONN_STATE_DISCONNECTED = 0
 CONN_STATE_CONNECTING = 1
 CONN_STATE_CONNECTED = 2
+CONN_STATE_SHUTDOWN = 3
 
 class BaseCoproCommand:
     def __init__(self, driver):
@@ -634,9 +635,12 @@ class CoproDriver:
             raise ValueError("The requested command to deregister is not currently registered")
         del self.registered_commands[receiver.getCommandId()]
 
-    def shutdown_copro(self):
+    def shutdown_copro(self, keep_shutdown=True):
         if self.connection_state == CONN_STATE_CONNECTED:
-            self.connection_state = CONN_STATE_DISCONNECTED
+            if keep_shutdown:
+                self.connection_state = CONN_STATE_SHUTDOWN
+            else:
+                self.connection_state = CONN_STATE_DISCONNECTED
             # Stop thrusters
             rospy.loginfo("Stopping thrusters")
             self.copro.sendall(bytearray([18, 7, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220]))
@@ -677,8 +681,10 @@ class CoproDriver:
 
                 self.buffer = self.buffer[self.buffer[0]:]
 
-    def coproCommTask(self):
-        if self.connection_state == CONN_STATE_CONNECTED:
+    def coproCommTask(self, event):
+        if self.connection_state == CONN_STATE_SHUTDOWN:
+            return
+        elif self.connection_state == CONN_STATE_CONNECTED:
             self.connection_pub.publish(True)
             if self.prev_connection_state != CONN_STATE_CONNECTED:
                 # Code to run once on connect
@@ -690,6 +696,7 @@ class CoproDriver:
                 self.actuatorCommander.response_queue.clear()
                 if self.actuatorCommander.lastConfig is not None:
                     self.actuatorCommander.reconfigure_callback(self.actuatorCommander.lastConfig, 0)
+            self.prev_connection_state = self.connection_state
 
             # Code to run repeatedly while copro is connected
             try:
@@ -702,24 +709,23 @@ class CoproDriver:
                 self.actuatorCommander.response_queue.clear()
                 self.buffer = []
                 try:
-                    self.shutdown_copro()
+                    self.shutdown_copro(False)
                 except:
                     pass
                 self.copro = None
         elif self.connection_state == CONN_STATE_CONNECTING:
+            self.prev_connection_state = self.connection_state
             self.connection_pub.publish(False)
             self.check_async_connect(timeout=2.0)
         else:
-            if self.prev_connection_state != CONN_STATE_DISCONNECTED:
+            if self.prev_connection_state == CONN_STATE_CONNECTED or self.prev_connection_state == CONN_STATE_UNCONFIGURED:
                 # Code to run once on disconnect
                 rospy.loginfo("Connecting to copro...")
+            self.prev_connection_state = self.connection_state
 
             self.connection_state = CONN_STATE_DISCONNECTED
             self.connection_pub.publish(False)
-
             self.connect()
-        
-        self.prev_connection_state = self.connection_state
             
             
 
