@@ -813,6 +813,7 @@ class CoproDriver:
                     self.connection_stall_time = time.time()
 
                 if time.time() - self.connection_stall_time > self.TIMEOUT:
+                    rospy.logwarn("Copro Connection Stalled... Dropping Connection")
                     self.closeConnection(False)
                     self.connection_stall_time = 0
             else:
