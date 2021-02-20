@@ -1,5 +1,38 @@
 #!/usr/bin/env python
 
+"""
+Implemented ROS Nodes:
+
+Publishers:
+'command/pwm' (Int16MultiArray): 8 PWM Values (in microseconds) for each of the thrusters
+'control/temp_threshold' (Int8): Sets the temperature threshold (in Deg C) before the peltier turns on
+'command/light1' (Int8): Sets the light 1 brightness (In Percent)
+'command/light2' (Int8): Sets the light 2 brightness (In Percent)
+'command/drop' (Int8): Drops the specified marker (0 or 1)
+'command/arm' (Bool): Arms/Disarms the Torpedo System
+'command/fire' (Int8): Fires the specific torpedo (0 or 1)
+'command/grabber' (Int8): Closes (+ Number), Opens (- Number), or Stops Grabber (0)
+
+Subscribers: 
+'depth/raw' (Depth): The raw reading from the depth sensor
+'depth/connected' (Bool): If the depth sensor is connected
+'state/battery_voltage' (Float32MultiArray): The voltage of port and starboard batteries
+'state/voltage_balanced' (Float32): The voltage of the balanced battery (V+) rail
+'state/battery_current' (Float32MultiArray): The current of port and starboard batteries
+'state/temperature' (Float32): The temperature of the robot electronics
+'state/switches' (SwitchState): The readings of the switches (only kill switch and sw1 implemented)
+'state/thruster_currents' (Float32MultiArray): The currents of the thrusters
+'state/memory_usage' (Float32): The memory usage of the copro (decimal out of 1)
+'state/temp_threshold' (Int8): The temperature threshold (in Deg C) before the peltier turns on
+'state/peltier_power' (Bool): If the peltier is powered on
+'state/copro_fault' (UInt8MultiArray): A list of fault codes from the copro
+'state/voltage_12' (Float32): The voltage of the 12V rail
+'state/voltage_5' (Float32): The voltage of the 5V rail
+'state/actuator' (Bool): If the actuator board is connected
+'state/actuator_fault' (Bool): If the actuator is in a fault state
+'state/copro' (Bool): If the copro is connected to the robot
+"""
+
 import errno
 import rospy
 import socket
@@ -310,7 +343,7 @@ class CoproMemoryCommand(BaseCoproCommand):
         if len(response) != 2:
             rospy.logerr("Improper memory usage response: " + str(response))
         else:
-            memory = (response[0]*256.0 + response[1]*256.0)/(256*256-1)
+            memory = (response[0]*256.0 + response[1])/(256*256-1)
             self.memory_pub.publish(Float32(memory))
 
 
@@ -320,7 +353,7 @@ class TempThresholdCommand(BaseCoproCommand):
         self.temp_threshold_pub = rospy.Publisher('state/temp_threshold', Int8, queue_size=1)
         rospy.Timer(rospy.Duration(1), self.temp_threshold_callback)
 
-        self.set_temp_threshold_pub = rospy.Subscriber('control/temp_threshold', Int8, self.set_temp_threshold_callback)
+        rospy.Subscriber('control/temp_threshold', Int8, self.set_temp_threshold_callback)
     
     def getCommandId(self):
         return TEMP_THRESHOLD_CMD
