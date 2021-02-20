@@ -772,7 +772,7 @@ class CoproDriver:
                         if not isinstance(recv_data[0], int):
                             recv_data = list(map(ord, recv_data))
                         self.buffer += recv_data
-                except BlockingIOError:
+                except socket.error:
                     pass
                 
                 # Continue processing buffer until the buffer doesn't containe the
@@ -933,7 +933,7 @@ class CoproDriver:
             self.connection_pub.publish(False)
             self.check_async_connect(timeout=self.TIMEOUT)
 
-        elif self.conneciton_state == CONN_STATE_CLOSING:
+        elif self.connection_state == CONN_STATE_CLOSING:
             # The CONN_STATE_CLOSING state should only be used right before the connection is closed
             # If this state is reached during the main connection processing loop, then closeConnection wasn't called
             # when it should have been called
