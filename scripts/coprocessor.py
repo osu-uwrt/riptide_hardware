@@ -4,9 +4,9 @@ import rospy
 import socket
 import select
 import traceback
-from threading import Thread
+from threading import Thread, Lock
 from collections import deque
-from std_msgs.msg import String, Header, Bool, Float32MultiArray, Int8, Float32, Int16MultiArray, Int8MultiArray
+from std_msgs.msg import String, Header, Bool, Float32MultiArray, Int8, Float32, Int16MultiArray, UInt8MultiArray
 from riptide_msgs.msg import Depth, PwmStamped, StatusLight, SwitchState
 from riptide_hardware.cfg import CoprocessorDriverConfig
 from dynamic_reconfigure.server import Server
@@ -20,13 +20,13 @@ TITAN_ROBOT = 2
 MOBO_POWER_CMD = 0
 LIGHTING_POWER_CMD = 1      # Implemented - Note: Controls jetson power on Puddles Copro
 THRUSTER_ENABLE_CMD = 2
-PELTIER_POWER_CMD = 3
+PELTIER_POWER_CMD = 3       # Implemented
 BATTERY_VOLTAGE_CMD = 4     # Implemented
 BATTERY_CURRENT_CMD = 5     # Implemented
 TEMPERATURE_CMD = 6         # Implemented
 THRUSTER_FORCE_CMD = 7      # Implemented
 LOGIC_CURRENT_CMD = 8           # Note: Not implemented on Titan Copro
-LOGIC_VOLTAGE_CMD = 9
+LOGIC_VOLTAGE_CMD = 9       # Implemented
 GET_SWITCHES_CMD = 10       # Implemented
 GET_DEPTH_CMD = 11          # Implemented
 THRUSTER_CURRENT_CMD = 12   # Implemented
@@ -37,7 +37,7 @@ ACTUATOR_CMD = 16           # Implemented
 PING_COPRO_CMD = 17
 MEMORY_CHECK_CMD = 18       # Implemented
 TEMP_THRESHOLD_CMD = 19     # Implemented
-GET_FAULT_STATE_CMD = 20
+GET_FAULT_STATE_CMD = 20    # Implemented
 
 # Actuator Commands
 ACTUATOR_SET_TORPEDO_TIMING_CMD = 0     # Implemented
@@ -372,7 +372,7 @@ class CoproFaultCommand(BaseCoproCommand):
     def __init__(self, driver):
         BaseCoproCommand.__init__(self, driver)
 
-        self.copro_fault_pub = rospy.Publisher('state/copro_fault', Int8MultiArray, queue_size=1)
+        self.copro_fault_pub = rospy.Publisher('state/copro_fault', UInt8MultiArray, queue_size=1)
         rospy.Timer(rospy.Duration(1), self.copro_fault_callback)
     
     def getCommandId(self):
@@ -390,7 +390,7 @@ class CoproFaultCommand(BaseCoproCommand):
         else:
             if response[0] == 1:
                 rospy.logwarn_once("Copro entered fault state")
-            self.copro_fault_pub.publish(Int8MultiArray(data=response[1:]))
+            self.copro_fault_pub.publish(UInt8MultiArray(data=response[1:]))
 
 
 class LogicVoltageCommand(BaseCoproCommand):
@@ -413,7 +413,7 @@ class LogicVoltageCommand(BaseCoproCommand):
             rospy.logerr("Invalid Logic Voltage Response: " + str(response))
         else:
             five_volt_value = ((response[2] * 256) + response[3]) / 1000.0
-            twelve_volt_value = ((response[4] * 256) + response[5]) / 1000.0
+            twelve_volt_value = ((response[4] * 256) + response[5]) / 500.0
 
             self.logic_5v_pub.publish(five_volt_value)
             self.logic_12v_pub.publish(twelve_volt_value)
@@ -508,7 +508,9 @@ class ActuatorCommand(BaseCoproCommand):
                 rospy.logerr("Invalid response for actuator command %d: " + str(response), command)
                 return
             if response[1] == ACTUATOR_TRY_FAIL:
-                rospy.logwarn_throttle(60, "Unable to contact actuator board")
+                if command != ACTUATOR_GET_FAULT_STATUS_CMD:
+                    # Only warn if code is trying to use the actuators
+                    rospy.logwarn_throttle(60, "Unable to contact actuator board")
                 self.actuator_connection_pub.publish(False)
             else:
                 if response[1] != 1:
@@ -547,6 +549,8 @@ class CoproDriver:
         self.response_queue = deque([], 50)
         self.buffer = []
         self.registered_commands = {}
+
+        self.command_lock = Lock()
         
 
     def connect(self, timeout) :
@@ -562,14 +566,20 @@ class CoproDriver:
             return False
 
     def enqueueCommand(self, command, args = []):
+        if not self.connected:
+            return False
+
+        self.command_lock.acquire()
         data = [command] + args
         data = [len(data) + 1] + data
         if (len(self.command_queue) + len(data)) <= self.command_queue.maxlen and (len(self.response_queue)+1) <= self.response_queue.maxlen:
             self.command_queue.append(data)
             self.response_queue.append(command)
+            self.command_lock.release()
             return True
         else:
-            rospy.logwarn("Dropping copro messages from full buffer")
+            rospy.logwarn_throttle(5, "Copro commands dropped: Command Buffer Full")
+            self.command_lock.release()
             return False
 
     def registerCommand(self, receiver):
@@ -603,17 +613,24 @@ class CoproDriver:
                 command += self.command_queue.popleft()
             self.copro.sendall(bytearray(command))
         if len(readable) > 0:
-            self.buffer += self.copro.recv(64)
-            if not isinstance(self.buffer[0], int):
-                self.buffer = list(map(ord, self.buffer))
-            if self.buffer[0] == 0:
-                rospy.logwarn("Protocol Error Occurred")
+            recv_data = self.copro.recv(64)
+            if len(recv_data) == 0:
+                self.connected = False
+                return
+            if not isinstance(recv_data[0], int):
+                recv_data = list(map(ord, recv_data))
+            self.buffer += recv_data
             while len(self.buffer) > 0 and self.buffer[0] <= len(self.buffer):
                 response = self.buffer[1:self.buffer[0]]
                 command = self.response_queue.popleft()
-                
-                if command in self.registered_commands:
-                    print("Processing command " + str(self.registered_commands[command].__class__.__name__) + " with parameter " + str(response))
+
+                if len(response) == 0:
+                    rospy.logwarn("Protocol error on command "+str(command))
+
+                    # If the command is for the actuator, remove the subcommand from queue to keep it lined up
+                    if command == self.actuatorCommander.getCommandId():
+                        self.actuatorCommander.response_queue.popleft()
+                elif command in self.registered_commands:
                     self.registered_commands[command].commandCallback(response)
                 else:
                     rospy.logerr("Unhandled Command Response from Copro: %d", command)
@@ -628,8 +645,10 @@ class CoproDriver:
         if self.current_robot == PUDDLES_ROBOT:
             self.IP_ADDR = '192.168.1.42'
         elif self.current_robot == TITAN_ROBOT:
-            self.IP_ADDR = 'localhost'
-        
+            self.IP_ADDR = '192.168.1.43'
+        else:
+            raise RuntimeError("Invalid Robot Specified")
+
         self.connection_pub = rospy.Publisher('state/copro', Bool, queue_size=1)
         
         # Implement command loading here
@@ -685,8 +704,8 @@ class CoproDriver:
                 self.response_queue.clear()
                 self.command_queue.clear()
                 self.actuatorCommander.response_queue.clear()
-                #if self.actuatorCommander.lastConfig is not None:
-                #    self.actuatorCommander.reconfigure_callback(self.actuatorCommander.lastConfig, 0)
+                if self.actuatorCommander.lastConfig is not None:
+                    self.actuatorCommander.reconfigure_callback(self.actuatorCommander.lastConfig, 0)
 
             rate.sleep()
 
