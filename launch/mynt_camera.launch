@@ -94,7 +94,7 @@
   <!-- depth topic -->
   <arg name="depth_topic" default="$(arg name)/depth/image_raw" />
   <!-- points topic -->
-  <arg name="points_topic" default="$(arg name)/points/data_raw" />
+  <arg name="points_topic" default="$(arg name)/points2" />
   <!-- imu topic origin -->
   <arg name="imu_topic" default="$(arg name)/imu/data_unprocessed" />
   <!-- temp topic -->
