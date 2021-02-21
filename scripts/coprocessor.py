@@ -4,8 +4,8 @@
 Implemented ROS Nodes:
 
 Publishers:
-'command/pwm' (Int16MultiArray): 8 PWM Values (in microseconds) for each of the thrusters
 'control/temp_threshold' (Int8): Sets the temperature threshold (in Deg C) before the peltier turns on
+'command/pwm' (Int16MultiArray): 8 PWM Values (in microseconds) for each of the thrusters
 'command/light1' (Int8): Sets the light 1 brightness (In Percent)
 'command/light2' (Int8): Sets the light 2 brightness (In Percent)
 'command/drop' (Int8): Drops the specified marker (0 or 1)
@@ -22,7 +22,7 @@ Subscribers:
 'state/temperature' (Float32): The temperature of the robot electronics
 'state/switches' (SwitchState): The readings of the switches (only kill switch and sw1 implemented)
 'state/thruster_currents' (Float32MultiArray): The currents of the thrusters
-'state/memory_usage' (Float32): The memory usage of the copro (decimal out of 1)
+'state/copro_memory_usage' (Float32): The memory usage of the copro (decimal out of 1)
 'state/temp_threshold' (Int8): The temperature threshold (in Deg C) before the peltier turns on
 'state/peltier_power' (Bool): If the peltier is powered on
 'state/copro_fault' (UInt8MultiArray): A list of fault codes from the copro
@@ -178,7 +178,7 @@ class DepthCommand(BaseCoproCommand):
         return GET_DEPTH_CMD
 
     def depth_callback(self, event):
-        if self.depth_pub.get_num_connections() > 0:
+        if self.depth_pub.get_num_connections() > 0 or self.depth_connected_pub.get_num_connections > 0:
             self.driver.enqueueCommand(GET_DEPTH_CMD)
     
     def commandCallback(self, response):
@@ -329,7 +329,7 @@ class ThrusterCurrentCommand(BaseCoproCommand):
 class CoproMemoryCommand(BaseCoproCommand):
     def __init__(self, driver):
         BaseCoproCommand.__init__(self, driver)
-        self.memory_pub = rospy.Publisher('state/memory_usage', Float32, queue_size=1)
+        self.memory_pub = rospy.Publisher('state/copro_memory_usage', Float32, queue_size=1)
         rospy.Timer(rospy.Duration(1.0), self.memory_callback)
 
     def getCommandId(self):

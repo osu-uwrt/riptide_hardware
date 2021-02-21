@@ -1,0 +1,22 @@
+volt_cur_thresholds:
+  battery_volt:
+    warn: 19.5
+    thruster_cutoff: 19
+  battery_current:
+    warn: 30
+    fuse: 35
+  thruster_current:
+    warn: 7
+    fuse: 10
+  five_volt:
+    warn_min: 4.7
+    warn_max: 5.7
+  twelve_volt:
+    warn_min: 11
+    warn_max: 13
+  balanced_volt:
+    warn_min: 19.5
+    warn_max: 22
+device_thresholds:
+  copro_mem_warn_percentage: 90
+  temp_over_target_warn: 10
