@@ -13,6 +13,8 @@ from diagnostic_updater import DiagnosticTask, Updater
 PUDDLES_ROBOT = 1
 TITAN_ROBOT = 2
 
+ROS_MESSAGE_LIFETIME = 5
+
 ERROR_DESCRIPTIONS = [
     "Undefined",
     "PROGRAM_TERMINATED",       # 1
@@ -25,7 +27,9 @@ ERROR_DESCRIPTIONS = [
     "DEPTH_INIT_FAIL",          # 8
     "BACKPLANE_INIT_FAIL",      # 9
     "FAULT_STATE_INVALID",      # 10
-    "CONV_BOARD_INIT_FAIL",     # 11
+    "BATT_LOW",                 # 11
+    "WATCHDOG_RESET",           # 12
+    "CONV_BOARD_INIT_FAIL",     # 13
 ]
 
 COMMAND_DESCRIPTIONS = [
@@ -75,9 +79,9 @@ class CoprocessorStatusTask(DiagnosticTask):
         DiagnosticTask.__init__(self, "Copro")
         self._warning_percentage = int(warning_percentage)
 
-        self._copro_memory_usage = ExpiringMessage(5)
-        self._copro_connected = ExpiringMessage(5)
-        self._copro_fault_list = ExpiringMessage(5)
+        self._copro_memory_usage = ExpiringMessage(ROS_MESSAGE_LIFETIME)
+        self._copro_connected = ExpiringMessage(ROS_MESSAGE_LIFETIME)
+        self._copro_fault_list = ExpiringMessage(ROS_MESSAGE_LIFETIME)
 
         rospy.Subscriber('state/copro', Bool, self.copro_state_callback)
         rospy.Subscriber('state/copro_fault', UInt8MultiArray, self.copro_fault_list_callback)
@@ -110,7 +114,7 @@ class CoprocessorStatusTask(DiagnosticTask):
             elif fault_list[i] < len(ERROR_DESCRIPTIONS):
                 fault_string += ERROR_DESCRIPTIONS[fault_list[i]]
             else:
-                fault_string += "UNKNOWN_ERR_{0}".format(command_id)
+                fault_string += "UNKNOWN_ERR_{0}".format(fault_list[i])
         return fault_string
 
     def run(self, stat):
@@ -144,9 +148,9 @@ class TemperatureTask(DiagnosticTask):
 
         self._warning_temp_above = int(warning_temp_above)
 
-        self._temperature = ExpiringMessage(5)
-        self._temp_threshold = ExpiringMessage(5)
-        self._peltier_power = ExpiringMessage(5)
+        self._temperature = ExpiringMessage(ROS_MESSAGE_LIFETIME)
+        self._temp_threshold = ExpiringMessage(ROS_MESSAGE_LIFETIME)
+        self._peltier_power = ExpiringMessage(ROS_MESSAGE_LIFETIME)
 
         rospy.Subscriber('state/temperature', Float32, self.temperature_callback)
         rospy.Subscriber('state/peltier_power', Bool, self.peltier_power_callback)
@@ -195,7 +199,7 @@ class DepthSensorTask(DiagnosticTask):
     def __init__(self):
         DiagnosticTask.__init__(self, "Depth Sensor")
 
-        self._connectecd = ExpiringMessage(5)
+        self._connectecd = ExpiringMessage(ROS_MESSAGE_LIFETIME)
         rospy.Subscriber('depth/connected', Bool, self.depth_connected_callback)
 
     def depth_connected_callback(self, msg):
@@ -218,7 +222,7 @@ class KillSwitchTask(DiagnosticTask):
     def __init__(self):
         DiagnosticTask.__init__(self, "Kill Switch")
 
-        self._switch_engaged = ExpiringMessage(5)
+        self._switch_engaged = ExpiringMessage(ROS_MESSAGE_LIFETIME)
         rospy.Subscriber('state/switches', SwitchState, self.kill_switch_callback)
 
     def kill_switch_callback(self, msg):
@@ -232,7 +236,7 @@ class KillSwitchTask(DiagnosticTask):
         elif switch_engaged:
             stat.summary(DiagnosticStatus.OK, "Kill Switch Engaged")
         else:
-            stat.summary(DiagnosticStatus.WARN, "Kill Switch Disengaged")
+            stat.summary(DiagnosticStatus.OK, "Kill Switch Disengaged")
 
         return stat
 
@@ -241,8 +245,8 @@ class ActuatorStatusTask(DiagnosticTask):
     def __init__(self):
         DiagnosticTask.__init__(self, "Actuators")
 
-        self._actuator_fault = ExpiringMessage(5)
-        self._actuator_connected = ExpiringMessage(5)
+        self._actuator_fault = ExpiringMessage(ROS_MESSAGE_LIFETIME)
+        self._actuator_connected = ExpiringMessage(ROS_MESSAGE_LIFETIME)
 
         rospy.Subscriber('state/actuator', Bool, self.actuator_state_callback)
         rospy.Subscriber('state/actuator_fault', Bool, self.actuator_fault_callback)

@@ -1,7 +1,8 @@
 volt_cur_thresholds:
   battery_volt:
     warn: 19.5
-    thruster_cutoff: 19
+    thruster_cutoff: 18.5
+    diff_warn: 1.5
   battery_current:
     warn: 30
     fuse: 35

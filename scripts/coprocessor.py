@@ -3,8 +3,10 @@
 """
 Implemented ROS Nodes:
 
-Publishers:
+Subscribers:
 'control/temp_threshold' (Int8): Sets the temperature threshold (in Deg C) before the peltier turns on
+'control/copro_reset' (Bool): Resets the Copro MCU when published with True
+'control/actuator_reset' (Bool): Resets the Actuator MCU when published with True
 'command/pwm' (Int16MultiArray): 8 PWM Values (in microseconds) for each of the thrusters
 'command/light1' (Int8): Sets the light 1 brightness (In Percent)
 'command/light2' (Int8): Sets the light 2 brightness (In Percent)
@@ -13,7 +15,7 @@ Publishers:
 'command/fire' (Int8): Fires the specific torpedo (0 or 1)
 'command/grabber' (Int8): Closes (+ Number), Opens (- Number), or Stops Grabber (0)
 
-Subscribers: 
+Publishers:
 'depth/raw' (Depth): The raw reading from the depth sensor
 'depth/connected' (Bool): If the depth sensor is connected
 'state/battery_voltage' (Float32MultiArray): The voltage of port and starboard batteries
@@ -67,7 +69,7 @@ GET_DEPTH_CMD = 11          # Implemented
 THRUSTER_CURRENT_CMD = 12   # Implemented
 TWELVE_VOLT_POWER_CMD = 13
 FIVE_VOLT_RESET_CMD = 14
-COPRO_RESET_CMD = 15
+COPRO_RESET_CMD = 15        # Implemented
 ACTUATOR_CMD = 16           # Implemented
 PING_COPRO_CMD = 17
 MEMORY_CHECK_CMD = 18       # Implemented
@@ -76,7 +78,7 @@ GET_FAULT_STATE_CMD = 20    # Implemented
 
 # Actuator Commands
 ACTUATOR_SET_TORPEDO_TIMING_CMD = 0     # Implemented
-ACTUATOR_RESET_BOARD_CMD = 1
+ACTUATOR_RESET_BOARD_CMD = 1            # Implemented
 ACTUATOR_GET_FAULT_STATUS_CMD = 2       # Implemented - Note: Only implemented on titan
 ACTUATOR_GET_TORPEDO_STATUS_CMD = 3
 ACTUATOR_ARM_TORPEDO_CMD = 4            # Implemented
@@ -178,7 +180,7 @@ class DepthCommand(BaseCoproCommand):
         return GET_DEPTH_CMD
 
     def depth_callback(self, event):
-        if self.depth_pub.get_num_connections() > 0 or self.depth_connected_pub.get_num_connections > 0:
+        if self.depth_pub.get_num_connections() > 0 or self.depth_connected_pub.get_num_connections() > 0:
             self.driver.enqueueCommand(GET_DEPTH_CMD)
     
     def commandCallback(self, response):
@@ -219,12 +221,14 @@ class BatteryVoltageCommand(BaseCoproCommand):
             self.driver.enqueueCommand(BATTERY_VOLTAGE_CMD)
     
     def commandCallback(self, response):
-        if len(response) != 6:
+        if len(response) == 1 and response[0] == 0:
+            rospy.logwarn_once("Unable to Read Battery Voltage")
+        elif len(response) != 7 or response[0] != 1:
             rospy.logerr("Improper battery voltage response: " + str(response))
         else: 
-            port_volt = (response[0] *256.0 + response[1])/100.0
-            stbd_volt = (response[2] *256.0 + response[3])/100.0
-            balanced_volt = (response[4] *256.0 + response[5])/100.0
+            port_volt = (response[1] *256.0 + response[2])/100.0
+            stbd_volt = (response[3] *256.0 + response[4])/100.0
+            balanced_volt = (response[5] *256.0 + response[6])/100.0
             self.batVoltage_pub.publish(Float32MultiArray(data = [port_volt, stbd_volt]))
             self.balanced_voltage_pub.publish(balanced_volt)
 
@@ -243,11 +247,13 @@ class BatteryCurrentCommand(BaseCoproCommand):
             self.driver.enqueueCommand(BATTERY_CURRENT_CMD)
 
     def commandCallback(self, response):
-        if len(response) != 4:
+        if len(response) == 1 and response[0] == 0:
+            rospy.logwarn_once("Unable to Read Battery Currents")
+        elif len(response) != 5 or response[0] != 1:
             rospy.logerr("Improper battery current response: " + str(response))
         else:
-            port_current = (response[0] *256.0 + response[1])/100.0
-            stbd_current = (response[2] *256.0 + response[3])/100.0
+            port_current = (response[1] *256.0 + response[2])/100.0
+            stbd_current = (response[3] *256.0 + response[3])/100.0
             self.batCurrent_pub.publish(Float32MultiArray(data = [port_current, stbd_current]))
 
 
@@ -265,10 +271,12 @@ class TemperatureCommand(BaseCoproCommand):
             self.driver.enqueueCommand(TEMPERATURE_CMD)
     
     def commandCallback(self, response):
-        if len(response) != 2:
+        if len(response) == 1 and response[0] == 0:
+            rospy.logwarn_once("Unable to Robot Temperature")
+        elif len(response) != 3 or response[0] != 1:
             rospy.logerr("Improper battery current response: " + str(response))
         else:
-            temperature = (response[0]*256.0 + response[1])/10.0
+            temperature = (response[1]*256.0 + response[2])/10.0
             self.temperature_pub.publish(Float32(temperature))
 
 
@@ -319,10 +327,12 @@ class ThrusterCurrentCommand(BaseCoproCommand):
             self.driver.enqueueCommand(THRUSTER_CURRENT_CMD)
 
     def commandCallback(self, response):
-        if len(response) != 8:
+        if len(response) == 1 and response[0] == 0:
+            rospy.logwarn_once("Unable to Read Thruster Currents")
+        elif len(response) != 9 or response[0] != 1:
             rospy.logerr("Improper thruster current response: " + str(response))
         else:
-            current_msg = Float32MultiArray(data = [x/25.0 for x in response])
+            current_msg = Float32MultiArray(data = [x/25.0 for x in response[1:]])
             self.thruster_current_pub.publish(current_msg)
 
 
@@ -472,15 +482,30 @@ class LogicVoltageCommand(BaseCoproCommand):
             self.driver.enqueueCommand(LOGIC_VOLTAGE_CMD)
     
     def commandCallback(self, response):
-        if len(response) != 6:
+        if len(response) == 1 and response[0] == 0:
+            rospy.logwarn_once("Unable to Read Logic Voltage")
+        elif len(response) != 7 or response[0] != 1:
             rospy.logerr("Invalid Logic Voltage Response: " + str(response))
         else:
-            five_volt_value = ((response[2] * 256) + response[3]) / 1000.0
-            twelve_volt_value = ((response[4] * 256) + response[5]) / 500.0
+            five_volt_value = ((response[3] * 256) + response[4]) / 1000.0
+            twelve_volt_value = ((response[5] * 256) + response[6]) / 500.0
 
             self.logic_5v_pub.publish(five_volt_value)
             self.logic_12v_pub.publish(twelve_volt_value)
+
+
+class ResetCommand(BaseCoproCommand):
+    def __init__(self, driver):
+        BaseCoproCommand.__init__(self, driver)
+
+        rospy.Subscriber('control/copro_reset', Bool, self.reset_callback)
     
+    def getCommandId(self):
+        return COPRO_RESET_CMD
+    
+    def reset_callback(self, msg):
+        if msg.data:
+            self.driver.enqueueCommand(COPRO_RESET_CMD, is_reset=True)
 
 class ActuatorCommand(BaseCoproCommand):
     lastConfig = None
@@ -495,6 +520,7 @@ class ActuatorCommand(BaseCoproCommand):
         rospy.Subscriber('command/arm', Bool, self.arm_callback)
         rospy.Subscriber('command/fire', Int8, self.fire_callback)
         rospy.Subscriber('command/grabber', Int8, self.grab_callback)
+        rospy.Subscriber('control/actuator_reset', Bool, self.reset_callback)
 
         if self.driver.current_robot == TITAN_ROBOT:
             self.actuator_connection_pub = rospy.Publisher('state/actuator', Bool, queue_size=1)
@@ -534,6 +560,10 @@ class ActuatorCommand(BaseCoproCommand):
         if self.driver.enqueueCommand(ACTUATOR_CMD, [(command << 5) + lower_bit_args] + remaining_args):
             self.response_queue.append(command)
 
+    def reset_callback(self, msg):
+        if msg.data:
+            self.enqueueActuatorCommand(ACTUATOR_RESET_BOARD_CMD)
+
     def arm_callback(self, msg):
         if msg.data:
             self.enqueueActuatorCommand(ACTUATOR_ARM_TORPEDO_CMD, 1<<4)
@@ -572,7 +602,7 @@ class ActuatorCommand(BaseCoproCommand):
                 rospy.logerr("Invalid response for actuator command %d: " + str(response), command)
                 return
             if response[1] == ACTUATOR_TRY_FAIL:
-                if command != ACTUATOR_GET_FAULT_STATUS_CMD:
+                if command != ACTUATOR_GET_FAULT_STATUS_CMD and command != ACTUATOR_RESET_BOARD_CMD:
                     # Only warn if code is trying to use the actuators
                     rospy.logwarn_throttle(60, "Unable to contact actuator board")
                 self.actuator_connection_pub.publish(False)
@@ -585,7 +615,7 @@ class ActuatorCommand(BaseCoproCommand):
                 rospy.logerr("Invalid response for actuator command %d: " + str(response), command)
                 return
 
-        if command != ACTUATOR_GET_TORPEDO_STATUS_CMD and command != ACTUATOR_GET_FAULT_STATUS_CMD:
+        if command != ACTUATOR_GET_TORPEDO_STATUS_CMD and command != ACTUATOR_GET_FAULT_STATUS_CMD and command != ACTUATOR_RESET_BOARD_CMD:
             if response[0] == 0:
                 rospy.logwarn("Failed to execute actuator command %d", command)
             elif response[0] != 1:
@@ -645,7 +675,7 @@ class CoproDriver:
 
 
         ########################################
-        # Note: These variables should only be written by class methods protected by command_lock
+        ### Note: These variables should only be written by class methods protected by command_lock
 
         # The lock on the command queue, prevents commands from being processed out of order (...even though it's single threaded)
         self.command_lock = Lock()
@@ -759,6 +789,7 @@ class CoproDriver:
         
         # Reset instance variables
         self.copro = None
+        self.connection_stall_time = 0
         self.command_queue.clear()
         self.response_queue.clear()
         self.actuatorCommander.response_queue.clear()
@@ -860,12 +891,13 @@ class CoproDriver:
     # Public Methods                       #
     ########################################
 
-    def enqueueCommand(self, command, args = []):
+    def enqueueCommand(self, command, args = [], is_reset = False):
         """Adds command to queue to be sent to copro
 
         Args:
             command (int): The command ID to be sent
             args (list, optional): Int list of arguments to provide with command. Defaults to [].
+            is_reset (bool): True if command is for a reset command so a response won't be expected
 
         Returns:
             bool: If the command was successfully queued
@@ -873,9 +905,8 @@ class CoproDriver:
         if self.connection_state != CONN_STATE_CONNECTED:
             return False
 
-        # This command lock is strange
-        # Although ros is single threaded, if this isn't implemented and there are a lot of commands being queued
-        # at the same time, a race condition like problem occurs, where the data for one command sometimes gets
+        # Prevents race condition since rospy callbacks are executed in a separate thread, so if another resource
+        # calls this method at the same time, a race condition occurs, where the data for one command sometimes gets
         # swapped with the data for another command sent at the same time.
         with self.command_lock:
             # Command Pakcet Format
@@ -888,7 +919,8 @@ class CoproDriver:
             # Make sure that there is enough space in the queues to prevent data from becoming desynced
             if (len(self.command_queue) + len(data)) <= self.command_queue.maxlen and (len(self.response_queue)+1) <= self.response_queue.maxlen:
                 self.command_queue.append(data)
-                self.response_queue.append(command)
+                if not is_reset:
+                    self.response_queue.append(command)
                 return True
             else:
                 rospy.logwarn_throttle(5, "Copro commands dropped: Command Buffer Full")
@@ -947,6 +979,7 @@ class CoproDriver:
                 rospy.loginfo("Connected to copro!")
                 self.buffer = []
                 self.connection_pub.publish(True)
+                self.connection_stall_time = 0
                 self.response_queue.clear()
                 self.command_queue.clear()
                 self.actuatorCommander.response_queue.clear()
@@ -1031,6 +1064,7 @@ class CoproDriver:
         PeltierCommand(self)
         CoproFaultCommand(self)
         LogicVoltageCommand(self)
+        ResetCommand(self)
         if self.current_robot == TITAN_ROBOT:
             LightingCommand(self)
         self.actuatorCommander = ActuatorCommand(self)
