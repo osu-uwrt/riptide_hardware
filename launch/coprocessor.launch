@@ -1,5 +1,5 @@
 <launch>
 	<param name="vehicle_file" type="string" value="$(find riptide_descriptions)/config/puddles.yaml" />
 	<param name="current_robot" type="int" value="1" />
-	<node pkg="riptide_hardware" type="coprocessor.py" name="coprocessor_driver" output="screen" />
+	<node pkg="riptide_hardware" type="coprocessor.py" name="coprocessor_driver" output="screen" respawn="true" />
 </launch>

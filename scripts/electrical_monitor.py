@@ -13,7 +13,7 @@ from diagnostic_updater import DiagnosticTask, Updater
 PUDDLES_ROBOT = 1
 TITAN_ROBOT = 2
 
-ROS_MESSAGE_LIFETIME = 5
+ROS_MESSAGE_LIFETIME = 3
 
 ERROR_DESCRIPTIONS = [
     "Undefined",
@@ -123,11 +123,11 @@ class CoprocessorStatusTask(DiagnosticTask):
         fault_list = self._copro_fault_list.get_value()
 
         if copro_connected is None:
-            stat.summary(DiagnosticStatus.STALE, "No data available from copro publisher")
+            stat.summary(DiagnosticStatus.STALE, "No connection data from copro publisher")
         elif not copro_connected:
             stat.summary(DiagnosticStatus.ERROR, "Copro not connected")
         elif memory_usgae is None or fault_list is None:
-            stat.summary(DiagnosticStatus.STALE, "No memory or fault data available from copro publisher")
+            stat.summary(DiagnosticStatus.STALE, "No data available from copro publisher")
         else:
             stat.add("Copro Connected", str(copro_connected))
             stat.add("Copro Memory Usage", "{:.2f}%".format(memory_usgae))

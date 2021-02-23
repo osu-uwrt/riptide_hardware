@@ -13,7 +13,7 @@ from diagnostic_updater import DiagnosticTask, Updater
 PUDDLES_ROBOT = 1
 TITAN_ROBOT = 2
 
-ROS_MESSAGE_LIFETIME = 5
+ROS_MESSAGE_LIFETIME = 3
 
 class ExpiringMessage:
     def __init__(self, message_life):
