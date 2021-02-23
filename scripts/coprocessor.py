@@ -98,6 +98,8 @@ CONN_STATE_CONNECTED = 3
 CONN_STATE_CLOSING = 4
 CONN_STATE_SHUTDOWN = 5
 
+CONN_HELLO_MESSAGE = "\010UWRT_Hi"
+
 class BaseCoproCommand:
     def __init__(self, driver):
         """Initializes the Command and registers it with the CoproDriver
@@ -813,7 +815,8 @@ class CoproDriver:
                 self.connection_state = CONN_STATE_CONNECTING
                 self.connection_start = time.time()
             elif err == 0:
-                # Connection succeeded, wait for response
+                # Connection succeeded, send hello and wait for response
+                self.copro.sendall(CONN_HELLO_MESSAGE)
                 self.connection_state = CONN_STATE_HELLO_WAIT
                 self.connection_start = time.time()
             else:
@@ -846,6 +849,7 @@ class CoproDriver:
             if self.copro in readable or self.copro in writable:
                 err = self.copro.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
                 if err == 0:
+                    self.copro.sendall(CONN_HELLO_MESSAGE)
                     self.connection_state = CONN_STATE_HELLO_WAIT
                     self.connection_start = time.time()
                 else:
@@ -889,7 +893,7 @@ class CoproDriver:
                 
                 # Receive the hello from the client
                 data = self.copro.recv(8)
-                if data == "\010UWRT_Hi":
+                if data == CONN_HELLO_MESSAGE:
                     self.connection_state = CONN_STATE_CONNECTED
                 # If it is zero length, the connection has been dropped. Don't try to shut down connection
                 elif len(data) == 0:
@@ -1272,15 +1276,14 @@ class CoproDriver:
         try:
             while not rospy.is_shutdown():
                 rospy.sleep(0.1)
-                if not self.comm_should_shutdown:
-                    for command_id in self.registered_commands:
-                        for command in self.registered_commands[command_id].getRunningTasks():
-                            if not command.is_alive():
-                                rospy.logfatal("Killing coprocessor_driver node: {0} task thread crashed!".format(self.registered_commands[command_id].__class__.__name__))
-                                rospy.signal_shutdown("Shutting Down from thread crash")
-                    if not self.copro_comm_timer.is_alive():
-                        rospy.logfatal("Killing coprocessor_driver node: Copro Comm thread crashed!")
-                        rospy.signal_shutdown("Shutting Down from thread crash")
+                for command_id in self.registered_commands:
+                    for command in self.registered_commands[command_id].getRunningTasks():
+                        if not command.is_alive() and not self.comm_should_shutdown:
+                            rospy.logfatal("Killing coprocessor_driver node: {0} task thread crashed!".format(self.registered_commands[command_id].__class__.__name__))
+                            rospy.signal_shutdown("Shutting Down from thread crash")
+                if not self.copro_comm_timer.is_alive() and not self.comm_should_shutdown:
+                    rospy.logfatal("Killing coprocessor_driver node: Copro Comm thread crashed!")
+                    rospy.signal_shutdown("Shutting Down from thread crash")
         except:
             rospy.logfatal("Killing coprocessor_driver node: Task monitor crashed")
             raise
