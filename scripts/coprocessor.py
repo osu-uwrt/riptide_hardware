@@ -514,6 +514,7 @@ class ActuatorCommand(BaseCoproCommand):
         BaseCoproCommand.__init__(self, driver)
 
         # This queue is used to determine which actuator subcommand was sent for the callback
+        self.queue_lock = Lock()
         self.response_queue = deque([], 50)
 
         rospy.Subscriber('command/drop', Int8, self.drop_callback)
@@ -557,8 +558,9 @@ class ActuatorCommand(BaseCoproCommand):
         assert lower_bit_args < (1<<5)
         assert command < (1<<3)
 
-        if self.driver.enqueueCommand(ACTUATOR_CMD, [(command << 5) + lower_bit_args] + remaining_args):
-            self.response_queue.append(command)
+        with self.queue_lock:
+            if self.driver.enqueueCommand(ACTUATOR_CMD, [(command << 5) + lower_bit_args] + remaining_args):
+                self.response_queue.append(command)
 
     def reset_callback(self, msg):
         if msg.data:
@@ -672,6 +674,8 @@ class CoproDriver:
         # Should only be used by class methods
         self.connection_state = CONN_STATE_DISCONNECTED
         self.prev_connection_state = CONN_STATE_UNCONFIGURED
+        self.comm_should_shutdown = False
+        self.comm_is_running = False
 
 
         ########################################
@@ -679,6 +683,8 @@ class CoproDriver:
 
         # The lock on the command queue, prevents commands from being processed out of order (...even though it's single threaded)
         self.command_lock = Lock()
+
+        self.command_queueing_permitted = False
 
         # The command queue for communicating with copro
         # only add byte arrays to this queue
@@ -768,39 +774,45 @@ class CoproDriver:
         Args:
             keep_shutdown (bool): If the connection should remain closed and not restart
         """
-        # If the socket is still active, clean it up
-        if self.copro is not None:
-            try:
-                if self.connection_state == CONN_STATE_CONNECTED:
-                    self.connection_state = CONN_STATE_CLOSING
-                    # Stop thrusters
-                    rospy.loginfo("Stopping thrusters")
-                    self.copro.setblocking(False)
-                    try:
-                        self.copro.sendall(bytearray([18, 7, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220]))
-                        self.copro.sendall(bytearray([0]))
-                    except:
-                        pass
-                    self.copro.shutdown(socket.SHUT_RDWR)
-                self.copro.close()
-            except Exception as e:
-                traceback.print_exc()
-                rospy.logerr("Error during connection close: " + str(e))
-        
-        # Reset instance variables
-        self.copro = None
-        self.connection_stall_time = 0
-        self.command_queue.clear()
-        self.response_queue.clear()
-        self.actuatorCommander.response_queue.clear()
-        self.buffer = []
 
-        # Set the state depending on if shutdown is needed
-        if keep_shutdown:
-            self.connection_state = CONN_STATE_SHUTDOWN
-        else:
-            self.connection_state = CONN_STATE_DISCONNECTED
-        
+        # Ensures that during this shutdown no commands can be added in this state
+        with self.actuatorCommander.queue_lock:
+            with self.command_lock:
+                self.connection_state = CONN_STATE_CLOSING
+
+                # If the socket is still active, clean it up
+                if self.copro is not None:
+                    try:
+                        if self.connection_state == CONN_STATE_CONNECTED:
+                            # Stop thrusters
+                            rospy.loginfo("Stopping thrusters")
+                            self.copro.setblocking(False)
+                            try:
+                                self.copro.sendall(bytearray([18, 7, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220]))
+                                self.copro.sendall(bytearray([0]))
+                            except:
+                                pass
+                            self.copro.shutdown(socket.SHUT_RDWR)
+                        self.copro.close()
+                    except Exception as e:
+                        traceback.print_exc()
+                        rospy.logerr("Error during connection close: " + str(e))
+                
+                # Reset instance variables
+                self.copro = None
+                self.command_queueing_permitted = False
+                self.connection_stall_time = 0
+                self.command_queue.clear()
+                self.response_queue.clear()
+                self.actuatorCommander.response_queue.clear()
+                self.buffer = []
+
+                # Set the state depending on if shutdown is needed
+                if keep_shutdown:
+                    self.connection_state = CONN_STATE_SHUTDOWN
+                else:
+                    self.connection_state = CONN_STATE_DISCONNECTED
+                
         # Notify of disconnect
         self.connection_pub.publish(False)
 
@@ -902,13 +914,21 @@ class CoproDriver:
         Returns:
             bool: If the command was successfully queued
         """
-        if self.connection_state != CONN_STATE_CONNECTED:
+        if not self.command_queueing_permitted:
             return False
 
         # Prevents race condition since rospy callbacks are executed in a separate thread, so if another resource
         # calls this method at the same time, a race condition occurs, where the data for one command sometimes gets
         # swapped with the data for another command sent at the same time.
         with self.command_lock:
+            # Check one more time in the event that the status changed while waiting for the lock
+            if not self.command_queueing_permitted:
+                return False
+            
+            # Sanity check
+            if self.connection_state != CONN_STATE_CONNECTED:
+                raise RuntimeError("Queuing permitted when not connected")
+            
             # Command Pakcet Format
             # Byte 0: Length (Including length byte)
             # Byte 1: Command ID
@@ -968,7 +988,9 @@ class CoproDriver:
         Args:
             event (rospy.TimerEvent): The timer event for this call
         """
-        if self.connection_state == CONN_STATE_SHUTDOWN:
+        if self.connection_state == CONN_STATE_SHUTDOWN or self.comm_should_shutdown:
+            event.shutdown()
+            self.comm_is_running = False
             return
 
         elif self.connection_state == CONN_STATE_CONNECTED:
@@ -978,11 +1000,19 @@ class CoproDriver:
                 # Code to run once on connect
                 rospy.loginfo("Connected to copro!")
                 self.buffer = []
-                self.connection_pub.publish(True)
                 self.connection_stall_time = 0
-                self.response_queue.clear()
-                self.command_queue.clear()
-                self.actuatorCommander.response_queue.clear()
+
+                # Enable command queueing now that the responses can be handled
+                with self.actuatorCommander.queue_lock:
+                    with self.command_lock:
+                        if len(self.response_queue) != 0 or len(self.command_queue) != 0 or len(self.actuatorCommander) != 0:
+                            self.response_queue.clear()
+                            self.command_queue.clear()
+                            self.actuatorCommander.response_queue.clear()
+                            rospy.log_err("Command buffers not empty when queueing is disabled")
+                        self.command_queueing_permitted = True
+                
+                # Send the actuator configuration data
                 if self.actuatorCommander.lastConfig is not None:
                     self.actuatorCommander.reconfigure_callback(self.actuatorCommander.lastConfig, 0)
             self.prev_connection_state = self.connection_state
@@ -1029,6 +1059,14 @@ class CoproDriver:
         """Called when rospy is shutting down
         Should only be called from on_shutdown callback
         """
+
+        # Wait for the communication task to stop, since changing the connection state while it is running
+        # could cause a race condition, and it will attempt to revive the connection instead of shutting it down
+        self.comm_should_shutdown = True
+        while self.comm_is_running:
+            rospy.sleep(0.01)
+        
+        # Once this is the only code with access to the connection, close it permanently
         self.closeConnection(True)
 
     def main(self):
@@ -1073,6 +1111,7 @@ class CoproDriver:
         rospy.on_shutdown(self.onShutdown)
 
         # Setup monitoring task
+        self.comm_is_running = True
         rospy.Timer(rospy.Duration(0.01), self.coproCommTask)
 
         rospy.spin()
