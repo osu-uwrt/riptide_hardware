@@ -934,12 +934,11 @@ class CoproDriver:
         # Ensures that during this shutdown no commands can be added in this state
         with self.actuatorCommander.queue_lock:
             with self.command_lock:
-                self.connection_state = CONN_STATE_CLOSING
-
                 # If the socket is still active, clean it up
                 if self.copro is not None:
                     try:
                         if self.connection_state == CONN_STATE_CONNECTED and not dont_send_close:
+                            self.connection_state = CONN_STATE_CLOSING
                             # Stop thrusters
                             rospy.loginfo("Stopping thrusters")
                             self.copro.setblocking(False)
@@ -1143,7 +1142,6 @@ class CoproDriver:
             event (rospy.TimerEvent): The timer event for this call
         """
         if self.connection_state == CONN_STATE_SHUTDOWN or self.comm_should_shutdown:
-            rospy.loginfo("Shutting down communication thread")
             self.copro_comm_timer.shutdown()
             return
 
@@ -1167,8 +1165,8 @@ class CoproDriver:
                         self.command_queueing_permitted = True
                 
                 # Send the actuator configuration data
-                #if self.actuatorCommander.lastConfig is not None:
-                #    self.actuatorCommander.reconfigure_callback(self.actuatorCommander.lastConfig, 0)
+                if self.actuatorCommander.lastConfig is not None:
+                    self.actuatorCommander.reconfigure_callback(self.actuatorCommander.lastConfig, 0)
             self.prev_connection_state = self.connection_state
 
             # Code to run repeatedly while copro is connected
