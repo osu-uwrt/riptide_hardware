@@ -87,10 +87,10 @@
 
   <!-- left topics -->
   <arg name="left_mono_topic" default="$(arg name)/left/image_mono" />
-  <arg name="left_color_topic" default="$(arg name)/left/image_color" />
+  <arg name="left_color_topic" default="$(arg name)/left/image_raw" />
   <!-- right topics -->
   <arg name="right_mono_topic" default="$(arg name)/right/image_mono" />
-  <arg name="right_color_topic" default="$(arg name)/right/image_color" />
+  <arg name="right_color_topic" default="$(arg name)/right/image_raw" />
   <!-- depth topic -->
   <arg name="depth_topic" default="$(arg name)/depth/image_raw" />
   <!-- points topic -->
