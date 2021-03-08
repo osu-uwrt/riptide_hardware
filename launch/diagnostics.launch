@@ -1,13 +1,21 @@
 <launch>
   <machine address="localhost" name="local" />
-  <arg name="computer" default="local" />
+  <arg name="vision_computer" default="local" />
+  <arg name="robot" default="puddles" />
 
-  <param name="diag_thresholds_file" type="string" value="$(find riptide_hardware)/cfg/diagnostic_thresholds.yaml" />
-	<param name="current_robot" type="int" value="1" />
+  <include file="$(find riptide_hardware)/launch/computer_monitor.launch" />
+  <include file="$(find riptide_hardware)/launch/computer_monitor.launch" unless="$(eval vision_computer == 'local')">
+    <arg name="computer" value="$(arg vision_computer)" />
+  </include>
 
-  <node pkg="riptide_hardware" type="computer_monitor.py" name="$(arg computer)_monitor" output="screen" machine="$(arg computer)" />
-  <node pkg="riptide_hardware" type="electrical_monitor.py" name="electrical_diags" output="screen" />
-  <node pkg="riptide_hardware" type="voltage_monitor.py" name="voltage_diags" output="screen" />
+  <node pkg="riptide_hardware" type="electrical_monitor.py" name="electrical_diags" output="screen">
+    <param name="diag_thresholds_file" type="string" value="$(find riptide_hardware)/cfg/diagnostic_thresholds.yaml" />
+    <param name="current_robot" value="$(arg robot)" />
+  </node>
+  <node pkg="riptide_hardware" type="voltage_monitor.py" name="voltage_diags" output="screen">
+    <param name="diag_thresholds_file" type="string" value="$(find riptide_hardware)/cfg/diagnostic_thresholds.yaml" />
+    <param name="current_robot" value="$(arg robot)" />
+  </node>
 
   <node pkg="diagnostic_aggregator" type="aggregator_node"
         name="diagnostic_aggregator" >

@@ -10,8 +10,8 @@ from riptide_msgs.msg import SwitchState
 from diagnostic_updater import DiagnosticTask, Updater
 
 # Robot Types
-PUDDLES_ROBOT = 1
-TITAN_ROBOT = 2
+PUDDLES_ROBOT = "puddles"
+TITAN_ROBOT = "titan"
 
 ROS_MESSAGE_LIFETIME = 3
 
@@ -334,12 +334,12 @@ def main():
     hostname = socket.gethostname()
     rospy.init_node("voltage_monitor")
 
-    current_robot = rospy.get_param('current_robot')
+    current_robot = rospy.get_param('~current_robot')
 
     updater = Updater()
     updater.setHardwareID(hostname)
 
-    with open(rospy.get_param('diag_thresholds_file'), 'r') as stream:
+    with open(rospy.get_param('~diag_thresholds_file'), 'r') as stream:
         thresholds = yaml.safe_load(stream)["volt_cur_thresholds"]
         updater.add(BatteryVoltageTask(thresholds["battery_volt"]["warn"], thresholds["battery_volt"]["thruster_cutoff"], thresholds["battery_volt"]["diff_warn"]))
         updater.add(BatteryCurrentTask(thresholds["battery_current"]["warn"], thresholds["battery_current"]["fuse"]))

@@ -10,8 +10,8 @@ from riptide_msgs.msg import SwitchState
 from diagnostic_updater import DiagnosticTask, Updater
 
 # Robot Types
-PUDDLES_ROBOT = 1
-TITAN_ROBOT = 2
+PUDDLES_ROBOT = "puddles"
+TITAN_ROBOT = "titan"
 
 ROS_MESSAGE_LIFETIME = 3
 
@@ -279,12 +279,12 @@ def main():
     hostname = socket.gethostname()
     rospy.init_node("electrical_monitor")
 
-    current_robot = rospy.get_param('current_robot')
+    current_robot = rospy.get_param('~current_robot')
 
     updater = Updater()
     updater.setHardwareID(hostname)
 
-    with open(rospy.get_param('diag_thresholds_file'), 'r') as stream:
+    with open(rospy.get_param('~diag_thresholds_file'), 'r') as stream:
         thresholds = yaml.safe_load(stream)["device_thresholds"]
         updater.add(TemperatureTask(thresholds["temp_over_target_warn"]))
         updater.add(CoprocessorStatusTask(thresholds["copro_mem_warn_percentage"]))

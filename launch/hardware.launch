@@ -9,4 +9,8 @@
     <arg name="robot" value="$(arg robot)" />
     <arg name="vision_computer" value="$(arg vision_computer)" />
   </include>
+  <include file="$(find riptide_hardware)/launch/diagnostics.launch">
+    <arg name="robot" value="$(arg robot)" />
+    <arg name="vision_computer" value="$(arg vision_computer)" />
+  </include>
 </launch>
