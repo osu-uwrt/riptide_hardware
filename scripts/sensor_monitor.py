@@ -35,7 +35,7 @@ class DVLSensorTask(DiagnosticTask):
         self._dvl_twist = ExpiringMessage(ROS_MESSAGE_LIFETIME)
 
         rospy.Subscriber('dvl/status', DvlStatus, self.dvl_status_callback)
-        rospy.Subscriber("dvl_twist", TwistWithCovarianceStamped, self.dvl_twist_callback)
+        rospy.Subscriber('dvl_twist', TwistWithCovarianceStamped, self.dvl_twist_callback)
 
     def dvl_status_callback(self, msg):
         self._dvl_status.update_value(msg)
@@ -93,7 +93,7 @@ class IMUSensorTask(DiagnosticTask):
 
         self._imu_status = ExpiringMessage(ROS_MESSAGE_LIFETIME)
 
-        rospy.Subscriber('/imu_3dm_gx4/imu', Imu, self.imu_callback)
+        rospy.Subscriber('imu/imu', Imu, self.imu_callback)
 
     def imu_callback(self, msg):
         self._imu_status.update_value(True)
