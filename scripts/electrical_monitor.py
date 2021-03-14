@@ -125,7 +125,7 @@ class CoprocessorStatusTask(DiagnosticTask):
         if copro_connected is None:
             stat.summary(DiagnosticStatus.STALE, "No connection data from copro publisher")
         elif not copro_connected:
-            stat.summary(DiagnosticStatus.ERROR, "Copro not connected")
+            stat.summary(DiagnosticStatus.ERROR, "Not Connected")
         elif memory_usgae is None or fault_list is None:
             stat.summary(DiagnosticStatus.STALE, "No data available from copro publisher")
         else:
@@ -211,9 +211,9 @@ class DepthSensorTask(DiagnosticTask):
         if connected is None:
             stat.summary(DiagnosticStatus.STALE, "No data available from copro publisher")
         elif connected:
-            stat.summary(DiagnosticStatus.OK, "Depth Sensor Connected")
+            stat.summary(DiagnosticStatus.OK, "Connected")
         else:
-            stat.summary(DiagnosticStatus.ERROR, "Depth Sensor Not Connected")
+            stat.summary(DiagnosticStatus.ERROR, "Not Connected")
 
         return stat
 
@@ -234,9 +234,9 @@ class KillSwitchTask(DiagnosticTask):
         if switch_engaged is None:
             stat.summary(DiagnosticStatus.STALE, "No data available from copro publisher")
         elif switch_engaged:
-            stat.summary(DiagnosticStatus.OK, "Kill Switch Engaged")
+            stat.summary(DiagnosticStatus.OK, "Engaged")
         else:
-            stat.summary(DiagnosticStatus.OK, "Kill Switch Disengaged")
+            stat.summary(DiagnosticStatus.OK, "Disengaged")
 
         return stat
 
@@ -255,7 +255,7 @@ class ActuatorStatusTask(DiagnosticTask):
         self._actuator_connected.update_value(msg.data)
     
     def actuator_fault_callback(self, msg):
-        self._actuator_fault.update_value(msg.data * 100)
+        self._actuator_fault.update_value(msg.data)
 
     def run(self, stat):
         actuator_connected = self._actuator_connected.get_value()
@@ -267,11 +267,11 @@ class ActuatorStatusTask(DiagnosticTask):
             stat.add("Actuators Connected", str(actuator_connected))
             stat.add("Actuators in Fault", str(actuator_fault))
             if not actuator_connected:
-                stat.summary(DiagnosticStatus.ERROR, "Actuator Board not connected")
+                stat.summary(DiagnosticStatus.ERROR, "Not Connected")
             elif actuator_fault:
                 stat.summary(DiagnosticStatus.ERROR, "Actuators in fault state")
             else:
-                stat.summary(DiagnosticStatus.OK, "Actuators OK")
+                stat.summary(DiagnosticStatus.OK, "OK")
 
         return stat
 

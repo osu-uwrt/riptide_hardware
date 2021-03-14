@@ -2,7 +2,9 @@
   <arg name="robot" default="puddles" />
   <arg name="vision_computer" default="local" />
 
-  <include file="$(find riptide_hardware)/launch/coprocessor.launch" />
+  <include file="$(find riptide_hardware)/launch/coprocessor.launch">
+    <arg name="robot" value="$(arg robot)" />
+  </include>
   <include file="$(find riptide_hardware)/launch/imu.launch" />
   <include file="$(find riptide_hardware)/launch/dvl.launch" />
   <include file="$(find riptide_hardware)/launch/mynt_camera.launch">

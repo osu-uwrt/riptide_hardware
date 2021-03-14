@@ -50,8 +50,8 @@ from dynamic_reconfigure.server import Server
 import yaml
 
 # Robot Types
-PUDDLES_ROBOT = 1
-TITAN_ROBOT = 2
+PUDDLES_ROBOT = "puddles"
+TITAN_ROBOT = "titan"
 
 # Copro Commands
 MOBO_POWER_CMD = 0
@@ -71,7 +71,7 @@ TWELVE_VOLT_POWER_CMD = 13
 FIVE_VOLT_RESET_CMD = 14
 COPRO_RESET_CMD = 15        # Implemented
 ACTUATOR_CMD = 16           # Implemented
-PING_COPRO_CMD = 17
+PING_COPRO_CMD = 17         # Implemented
 MEMORY_CHECK_CMD = 18       # Implemented
 TEMP_THRESHOLD_CMD = 19     # Implemented
 GET_FAULT_STATE_CMD = 20    # Implemented
@@ -109,12 +109,16 @@ class BaseCoproCommand:
     """
     critical_tasks = None
 
-    def __init__(self, driver):
+    def __init__(self, driver, command_id):
         """Initializes the Command and registers it with the CoproDriver
 
         Args:
             driver (CoproDriver): The instance of CoproDriver to register the command with
         """
+        self._command_id = command_id
+        self.critical_tasks = []
+        self.tasks = []
+
         self.driver = driver
         self.driver.registerCommand(self)
 
@@ -124,7 +128,7 @@ class BaseCoproCommand:
         Returns:
             int: The id of the command
         """
-        raise NotImplementedError()
+        return self._command_id
 
     def commandCallback(self, response):
         """The callback for after a command has been executed
@@ -149,15 +153,9 @@ def toBytes(num):
 
 class PwmCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver)
+        BaseCoproCommand.__init__(self, driver, THRUSTER_FORCE_CMD)
         rospy.Subscriber('command/pwm', Int16MultiArray, self.pwm_callback)
 
-        self.tasks = []
-        self.critical_tasks = []
-    
-    def getCommandId(self):
-        return THRUSTER_FORCE_CMD
-    
     def pwm_callback(self, pwm_message):
         args = []
         args += toBytes(pwm_message.data[0])
@@ -169,6 +167,10 @@ class PwmCommand(BaseCoproCommand):
         args += toBytes(pwm_message.data[6])
         args += toBytes(pwm_message.data[7])
         self.driver.enqueueCommand(THRUSTER_FORCE_CMD, args)
+
+    def stopThrustersCommand(self):
+        # This the command that will put the thrusters into a stopped state
+        return bytearray([18, 7, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220])
 
     def commandCallback(self, response):
         if len(response) != 1:
@@ -183,19 +185,15 @@ class PwmCommand(BaseCoproCommand):
 
 class DepthCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver)
+        BaseCoproCommand.__init__(self, driver, GET_DEPTH_CMD)
         self.depth_pub = rospy.Publisher('depth/raw', Depth, queue_size=1)
         self.depth_connected_pub = rospy.Publisher('depth/connected', Bool, queue_size=1)
         self.depth_connected_pub.publish(False)
 
         with open(rospy.get_param('vehicle_file'), 'r') as stream:
             self.depthVariance = yaml.safe_load(stream)['depth']['sigma'] ** 2
-
-        self.critical_tasks = [rospy.Timer(rospy.Duration(0.05), self.depth_callback)]
-        self.tasks = []
-    
-    def getCommandId(self):
-        return GET_DEPTH_CMD
+        
+        self.critical_tasks.append(rospy.Timer(rospy.Duration(0.05), self.depth_callback))
 
     def depth_callback(self, event):
         if self.depth_pub.get_num_connections() > 0 or self.depth_connected_pub.get_num_connections() > 0:
@@ -226,15 +224,11 @@ class DepthCommand(BaseCoproCommand):
 
 class BatteryVoltageCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver)
+        BaseCoproCommand.__init__(self, driver, BATTERY_VOLTAGE_CMD)
         self.batVoltage_pub = rospy.Publisher('state/battery_voltage', Float32MultiArray, queue_size=1)
         self.balanced_voltage_pub = rospy.Publisher('state/voltage_balanced', Float32, queue_size=1)
 
-        self.tasks = [rospy.Timer(rospy.Duration(1), self.battery_voltage_callback)]
-        self.critical_tasks = []
-
-    def getCommandId(self):
-        return BATTERY_VOLTAGE_CMD
+        self.tasks.append(rospy.Timer(rospy.Duration(1), self.battery_voltage_callback))
 
     def battery_voltage_callback(self, event):   
         if self.batVoltage_pub.get_num_connections() > 0 or self.balanced_voltage_pub.get_num_connections() > 0:
@@ -255,13 +249,9 @@ class BatteryVoltageCommand(BaseCoproCommand):
 
 class BatteryCurrentCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver)
+        BaseCoproCommand.__init__(self, driver, BATTERY_CURRENT_CMD)
         self.batCurrent_pub = rospy.Publisher('state/battery_current', Float32MultiArray, queue_size=1)
-        self.tasks = [rospy.Timer(rospy.Duration(1), self.battery_current_callback)]
-        self.critical_tasks = []
-    
-    def getCommandId(self):
-        return BATTERY_CURRENT_CMD
+        self.tasks.append(rospy.Timer(rospy.Duration(1), self.battery_current_callback))
 
     def battery_current_callback(self, event):   
         if self.batCurrent_pub.get_num_connections() > 0:
@@ -280,13 +270,9 @@ class BatteryCurrentCommand(BaseCoproCommand):
 
 class TemperatureCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver)
+        BaseCoproCommand.__init__(self, driver, TEMPERATURE_CMD)
         self.temperature_pub = rospy.Publisher('state/temperature', Float32, queue_size=1)
-        self.tasks = [rospy.Timer(rospy.Duration(0.5), self.temperature_callback)]
-        self.critical_tasks = []
-
-    def getCommandId(self):
-        return TEMPERATURE_CMD
+        self.tasks.append(rospy.Timer(rospy.Duration(0.5), self.temperature_callback))
 
     def temperature_callback(self, event):   
         if self.temperature_pub.get_num_connections() > 0:
@@ -304,15 +290,11 @@ class TemperatureCommand(BaseCoproCommand):
 
 class SwitchCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver)
+        BaseCoproCommand.__init__(self, driver, GET_SWITCHES_CMD)
         self.last_kill_switch_state = False
         self.switch_pub = rospy.Publisher('state/switches', SwitchState, queue_size=1)
-        self.tasks = []
-        self.critical_tasks = [rospy.Timer(rospy.Duration(0.2), self.switch_callback)]
+        self.critical_tasks.append(rospy.Timer(rospy.Duration(0.2), self.switch_callback))
 
-    def getCommandId(self):
-        return GET_SWITCHES_CMD
-    
     def switch_callback(self, event):
         if self.switch_pub.get_num_connections() > 0:
             self.driver.enqueueCommand(GET_SWITCHES_CMD)
@@ -338,13 +320,9 @@ class SwitchCommand(BaseCoproCommand):
 
 class ThrusterCurrentCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver)
+        BaseCoproCommand.__init__(self, driver, THRUSTER_CURRENT_CMD)
         self.thruster_current_pub = rospy.Publisher('state/thruster_currents', Float32MultiArray, queue_size=1)
-        self.tasks = [rospy.Timer(rospy.Duration(0.2), self.thruster_current_callback)]
-        self.critical_tasks = []
-
-    def getCommandId(self):
-        return THRUSTER_CURRENT_CMD
+        self.tasks.append(rospy.Timer(rospy.Duration(0.2), self.thruster_current_callback))
 
     def thruster_current_callback(self, event):
         if self.thruster_current_pub.get_num_connections() > 0:
@@ -362,13 +340,9 @@ class ThrusterCurrentCommand(BaseCoproCommand):
 
 class CoproMemoryCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver)
+        BaseCoproCommand.__init__(self, driver, MEMORY_CHECK_CMD)
         self.memory_pub = rospy.Publisher('state/copro_memory_usage', Float32, queue_size=1)
-        self.tasks = [rospy.Timer(rospy.Duration(1.0), self.memory_callback)]
-        self.critical_tasks = []
-
-    def getCommandId(self):
-        return MEMORY_CHECK_CMD
+        self.tasks.append(rospy.Timer(rospy.Duration(1.0), self.memory_callback))
 
     def memory_callback(self, event):
         if self.memory_pub.get_num_connections() > 0:
@@ -384,15 +358,11 @@ class CoproMemoryCommand(BaseCoproCommand):
 
 class TempThresholdCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver)
+        BaseCoproCommand.__init__(self, driver, TEMP_THRESHOLD_CMD)
         self.temp_threshold_pub = rospy.Publisher('state/temp_threshold', Int8, queue_size=1)
-        self.tasks = [rospy.Timer(rospy.Duration(1), self.temp_threshold_callback)]
-        self.critical_tasks = []
+        self.tasks.append(rospy.Timer(rospy.Duration(1), self.temp_threshold_callback))
 
         rospy.Subscriber('control/temp_threshold', Int8, self.set_temp_threshold_callback)
-    
-    def getCommandId(self):
-        return TEMP_THRESHOLD_CMD
 
     def temp_threshold_callback(self, event):
         if self.temp_threshold_pub.get_num_connections() > 0:
@@ -411,18 +381,12 @@ class TempThresholdCommand(BaseCoproCommand):
 
 class LightingCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver)
+        BaseCoproCommand.__init__(self, driver, LIGHTING_POWER_CMD)
 
         assert self.driver.current_robot == TITAN_ROBOT
 
         rospy.Subscriber('command/light1', Int8, self.light1_callback)
         rospy.Subscriber('command/light2', Int8, self.light2_callback)
-
-        self.critical_tasks = []
-        self.tasks = []
-    
-    def getCommandId(self):
-        return LIGHTING_POWER_CMD
 
     def light1_callback(self, msg):
         if msg.data < 0 or msg.data > 100:
@@ -451,14 +415,10 @@ class LightingCommand(BaseCoproCommand):
 
 class PeltierCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver)
+        BaseCoproCommand.__init__(self, driver, PELTIER_POWER_CMD)
 
         self.peltier_power_pub = rospy.Publisher('state/peltier_power', Bool, queue_size=1)
-        self.tasks = [rospy.Timer(rospy.Duration(1), self.peltier_callback)]
-        self.critical_tasks = []
-    
-    def getCommandId(self):
-        return PELTIER_POWER_CMD
+        self.tasks.append(rospy.Timer(rospy.Duration(1), self.peltier_callback))
 
     def peltier_callback(self, event):
         if self.peltier_power_pub.get_num_connections() > 0:
@@ -473,14 +433,10 @@ class PeltierCommand(BaseCoproCommand):
 
 class CoproFaultCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver)
+        BaseCoproCommand.__init__(self, driver, GET_FAULT_STATE_CMD)
 
         self.copro_fault_pub = rospy.Publisher('state/copro_fault', UInt8MultiArray, queue_size=1)
-        self.tasks = [rospy.Timer(rospy.Duration(1), self.copro_fault_callback)]
-        self.critical_tasks = []
-    
-    def getCommandId(self):
-        return GET_FAULT_STATE_CMD
+        self.tasks.append(rospy.Timer(rospy.Duration(1), self.copro_fault_callback))
     
     def copro_fault_callback(self, event):
         if self.copro_fault_pub.get_num_connections() > 0:
@@ -499,15 +455,11 @@ class CoproFaultCommand(BaseCoproCommand):
 
 class LogicVoltageCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver)
+        BaseCoproCommand.__init__(self, driver, LOGIC_VOLTAGE_CMD)
 
         self.logic_12v_pub = rospy.Publisher('state/voltage_12', Float32, queue_size=1)
         self.logic_5v_pub = rospy.Publisher('state/voltage_5', Float32, queue_size=1)
-        self.tasks = [rospy.Timer(rospy.Duration(1), self.logic_voltage_callback)]
-        self.critical_tasks = []
-
-    def getCommandId(self):
-        return LOGIC_VOLTAGE_CMD
+        self.tasks.append(rospy.Timer(rospy.Duration(1), self.logic_voltage_callback))
 
     def logic_voltage_callback(self, event):
         if self.logic_12v_pub.get_num_connections() > 0 or self.logic_5v_pub.get_num_connections() > 0:
@@ -528,16 +480,10 @@ class LogicVoltageCommand(BaseCoproCommand):
 
 class ResetCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver)
+        BaseCoproCommand.__init__(self, driver, COPRO_RESET_CMD)
 
         rospy.Subscriber('control/copro_reset', Bool, self.reset_callback)
 
-        self.critical_tasks = []
-        self.tasks = []
-
-    def getCommandId(self):
-        return COPRO_RESET_CMD
-    
     def reset_callback(self, msg):
         if msg.data:
             self.driver.enqueueCommand(COPRO_RESET_CMD, is_reset=True)
@@ -546,7 +492,7 @@ class ActuatorCommand(BaseCoproCommand):
     lastConfig = None
 
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver)
+        BaseCoproCommand.__init__(self, driver, ACTUATOR_CMD)
 
         # This queue is used to determine which actuator subcommand was sent for the callback
         self.queue_lock = Lock()
@@ -563,18 +509,12 @@ class ActuatorCommand(BaseCoproCommand):
             self.actuator_connection_pub.publish(False)
             self.actuator_fault_pub = rospy.Publisher('state/actuator_fault', Bool, queue_size=1)
 
-            self.tasks = [rospy.Timer(rospy.Duration(1), self.status_callback)]
+            self.tasks.append(rospy.Timer(rospy.Duration(1), self.status_callback))
         else:
             self.actuator_connection_pub = None
             self.actuator_fault_pub = None
-            self.tasks = []
-
-        self.critical_tasks = []
 
         Server(CoprocessorDriverConfig, self.reconfigure_callback)
-
-    def getCommandId(self):
-        return ACTUATOR_CMD
 
     def reconfigure_callback(self, config, level):
         self.lastConfig = config
@@ -669,16 +609,12 @@ class ActuatorCommand(BaseCoproCommand):
 
 class PingCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver)
+        BaseCoproCommand.__init__(self, driver, PING_COPRO_CMD)
 
         # Nothing needs to be published or subscribed to. Just to make sure the connection is still alive
 
         self.last_ping = time.time()
-        self.critical_tasks = [rospy.Timer(rospy.Duration(0.4), self.ping_callback)]
-        self.tasks = []
-
-    def getCommandId(self):
-        return PING_COPRO_CMD
+        self.critical_tasks.append(rospy.Timer(rospy.Duration(0.4), self.ping_callback))
 
     def ping_callback(self, event):
         self.driver.enqueueCommand(PING_COPRO_CMD)
@@ -706,11 +642,10 @@ class CoproDriver:
     # The config parameter passed with the current robot
     current_robot = None
 
-    # The instance of the ActuatorCommander used 
-    actuatorCommander = None
-
-    # The instance of PingCommand used
-    pingCommander = None
+    # Commands with specific features used directly in the copro driver
+    actuatorCommander = None     # The instance of the ActuatorCommander (used for controll actuator subcommand queue)
+    pingCommander = None         # The instance of PingCommand (used for timeouts)
+    pwmCommander = None          # The instance of PwmCommand (used for getting the stop thruster command during disconnect)
 
     def __init__(self):
         """Initializes new instance of CoproDriver class
@@ -917,7 +852,8 @@ class CoproDriver:
                             rospy.loginfo("Stopping thrusters")
                             self.copro.setblocking(False)
                             try:
-                                self.copro.sendall(bytearray([18, 7, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220, 5, 220]))
+                                # Try a clean disconnect
+                                self.copro.sendall(self.pwmCommander.stopThrustersCommand())
                                 self.copro.sendall(bytearray([0]))
                             except:
                                 pass
@@ -1207,7 +1143,7 @@ class CoproDriver:
         rospy.init_node('coprocessor_driver')
 
         # Load configuration values depending on current robot
-        self.current_robot = rospy.get_param('current_robot')
+        self.current_robot = rospy.get_param('~current_robot')
 
         if self.current_robot == PUDDLES_ROBOT:
             self.IP_ADDR = '192.168.1.42'
@@ -1219,7 +1155,7 @@ class CoproDriver:
         self.connection_pub = rospy.Publisher('state/copro', Bool, queue_size=1)
         
         # Implement command loading here
-        PwmCommand(self)
+        self.pwmCommander = PwmCommand(self)
         DepthCommand(self)
         BatteryVoltageCommand(self)
         BatteryCurrentCommand(self)
@@ -1236,7 +1172,7 @@ class CoproDriver:
             LightingCommand(self)
         self.actuatorCommander = ActuatorCommand(self)
         self.pingCommander = PingCommand(self)
-                
+
         # set up clean shutdown
         rospy.on_shutdown(self.onShutdown)
 
