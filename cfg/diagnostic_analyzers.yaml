@@ -1,0 +1,22 @@
+pub_rate: 1.0
+analyzers:
+  electronics_group:
+    type: diagnostic_aggregator/AnalyzerGroup
+    path: Electronics
+    analyzers:
+      voltages:
+        type: diagnostic_aggregator/GenericAnalyzer
+        path: Voltages and Currents
+        find_and_remove_prefix: "voltage_diags"
+      devices:
+        type: diagnostic_aggregator/GenericAnalyzer
+        path: Devices
+        find_and_remove_prefix: electrical_diags
+      sensors:
+        type: diagnostic_aggregator/GenericAnalyzer
+        path: Sensors
+        find_and_remove_prefix: sensor_diags
+  computers:
+    type: diagnostic_aggregator/GenericAnalyzer
+    path: Computers
+    contains: "_monitor"
