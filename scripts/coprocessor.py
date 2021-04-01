@@ -296,8 +296,8 @@ class SwitchCommand(BaseCoproCommand):
         else:
             switch_msg = SwitchState()
             switch_msg.header.stamp = rospy.Time.now()
-            switch_msg.kill = True if response[0] & 2 else False
-            switch_msg.sw1 = True if response[0] & 1 else False
+            switch_msg.kill = bool(response[0] & (1 << 0))
+            switch_msg.sw1 = bool(response[0] & (1 << 1))
 
             if self.last_kill_switch_state is not switch_msg.kill:
                 if switch_msg.kill:

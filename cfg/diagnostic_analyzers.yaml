@@ -7,15 +7,15 @@ analyzers:
       voltages:
         type: diagnostic_aggregator/GenericAnalyzer
         path: Voltages and Currents
-        find_and_remove_prefix: "voltage_diags"
+        contains: "voltage_diags"
       devices:
         type: diagnostic_aggregator/GenericAnalyzer
         path: Devices
-        find_and_remove_prefix: electrical_diags
+        contains: electrical_diags
       sensors:
         type: diagnostic_aggregator/GenericAnalyzer
         path: Sensors
-        find_and_remove_prefix: sensor_diags
+        contains: sensor_diags
   computers:
     type: diagnostic_aggregator/GenericAnalyzer
     path: Computers
