@@ -196,7 +196,7 @@ class DepthCommand(BaseCoproCommand):
         else:
             if response[0] == 1:
                 depth = (response[1] << 16) + (response[2] << 8) + response[3]
-                if response[0] & 0x80 != 0:
+                if response[1] & 0x80 != 0:
                     depth = -1 * ((1<<24) - depth)
                 depth = depth / 100000.0
                 depth_msg = Depth()
@@ -501,7 +501,8 @@ class ActuatorCommand(BaseCoproCommand):
             self.actuator_connection_pub = None
             self.actuator_fault_pub = None
 
-        Server(CoprocessorDriverConfig, self.reconfigure_callback)
+        if self.driver.current_robot == TITAN_ROBOT:
+            Server(CoprocessorDriverConfig, self.reconfigure_callback)
 
     def reconfigure_callback(self, config, level):
         self.lastConfig = config

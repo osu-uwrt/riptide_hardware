@@ -208,12 +208,12 @@ class ThrusterCurrentTask(DiagnosticTask):
                 warning_message = self.generateThrusterList(warning_thrusters, thruster_currents)
                 stat.summary(DiagnosticStatus.WARN, "{} above nominal ESC current ({}A) (Total Current: {:.2f}A)".format(warning_message, self._warning_current, current_total))
             
-            elif len(zero_current_thrusters) > 0 and kill_switch_engaged:
-                if len(zero_current_thrusters) == len(thruster_currents):
-                    warning_message = "Thrusters"
-                else:
-                    warning_message = self.generateThrusterList(zero_current_thrusters, thruster_currents)
-                stat.summary(DiagnosticStatus.WARN, "{} not powered on while kill switch engaged".format(warning_message))
+            #elif len(zero_current_thrusters) > 0 and kill_switch_engaged:
+            #    if len(zero_current_thrusters) == len(thruster_currents):
+            #        warning_message = "Thrusters"
+            #    else:
+            #        warning_message = self.generateThrusterList(zero_current_thrusters, thruster_currents)
+            #    stat.summary(DiagnosticStatus.WARN, "{} not powered on while kill switch engaged".format(warning_message))
             elif len(zero_current_thrusters) != len(thruster_currents) and not kill_switch_engaged:
                 if len(zero_current_thrusters) == 0:
                     warning_message = "Thrusters"
