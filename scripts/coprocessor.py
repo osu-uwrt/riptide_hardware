@@ -43,7 +43,7 @@ import time
 import traceback
 from threading import Thread, Lock
 from collections import deque
-from std_msgs.msg import String, Header, Bool, Float32MultiArray, Int8, Float32, Int16MultiArray, UInt8MultiArray
+from std_msgs.msg import String, Header, Bool, Float32MultiArray, Int8, UInt16, Float32, Int16MultiArray, UInt8MultiArray
 from riptide_msgs.msg import Depth, PwmStamped, StatusLight, SwitchState
 from riptide_hardware.cfg import CoprocessorDriverConfig
 from dynamic_reconfigure.server import Server
@@ -55,6 +55,7 @@ TITAN_ROBOT = "titan"
 
 # Copro Commands
 CONN_HELLO_MESSAGE = "\010UWRT_Hi"
+CONN_LATENCY_NEW_WEIGHT = 0.02
 
 MOBO_POWER_CMD = 0
 LIGHTING_POWER_CMD = 1      # Implemented - Note: Controls jetson power on Puddles Copro
@@ -622,8 +623,11 @@ class CoproDriver:
     # The IP address to use to connect
     IP_ADDR = None
 
-    # The ros publisher for the copro connection state
+    # The ros publishers for the copro connection state
     connection_pub = None
+    connection_latency_pub = None
+    connection_tx_queue_len_pub = None
+    connection_rx_pending_queue_len_pub = None
 
     # The timer scheduling the copro communication task
     copro_comm_timer = None
@@ -652,7 +656,7 @@ class CoproDriver:
 
         # The command queue for communicating with copro
         # This contains a full command_data packet:
-        # [packet_data (bytearray), command_id (None or int), extra_data (Any)]
+        # [packet_data (bytearray), command_id (None or int), extra_data (Any), sent_time (float)]
         self.command_queue = deque([], 50)
         ########################################
 
@@ -675,9 +679,12 @@ class CoproDriver:
         # If the copro communication task should shut down
         self.comm_should_shutdown = False
 
+        # Connection latency (ms)
+        self.connection_latency = -1
+
         # The response queue for holding data on packets being processed by the copro
         # This contains a partial command_data packet:
-        # [command_id (None or int), extra_data (Any)]
+        # [command_id (None or int), extra_data (Any), sent_time (float)]
         self.response_queue = deque([], 50)
         ########################################
 
@@ -734,6 +741,7 @@ class CoproDriver:
         # Reset connection instance variables
         self.copro = None
         self.connected = False
+        self.connection_latency = -1
         self.buffer = []
 
         # Dump contents of the command queues
@@ -744,6 +752,8 @@ class CoproDriver:
     def doCoproCommunication(self):
         """Sends any pending commands to copro and processes any data returned
         """
+        # Publish the number of commands in queue before they are handled
+        self.connection_tx_queue_len_pub.publish(len(self.command_queue))
 
         readable, writable, exceptional = select.select([self.copro], [self.copro], [self.copro], 0)
 
@@ -792,9 +802,16 @@ class CoproDriver:
                 # Decode packet - The first byte is length, remaining is data
                 response = self.buffer[1:self.buffer[0]]
 
-                # Retrieve the command id of this message
+                # Retrieve the command id and time of request of this message
                 command_data = self.response_queue.popleft()
                 command = command_data[0]
+                command_latency = int((time.time() - command_data[2]) * 1000)
+
+                # Recalculate connection latency with a weighted average
+                if self.connection_latency == -1:
+                    self.connection_latency = command_latency
+                else:
+                    self.connection_latency = (self.connection_latency * (1-CONN_LATENCY_NEW_WEIGHT)) + (command_latency * CONN_LATENCY_NEW_WEIGHT)
 
                 # The copro connection will return an empty packet if it failed to execute the command
                 # If this is the case, don't execute the callback, and instead log error
@@ -810,6 +827,11 @@ class CoproDriver:
                 # Remove the processed command from the receive buffer
                 self.buffer = self.buffer[self.buffer[0]:]
         
+        # Publish the connection latency and rx pending queue length
+        self.connection_rx_pending_queue_len_pub.publish(len(self.response_queue))
+        if self.connection_latency != -1:
+            self.connection_latency_pub.publish(self.connection_latency)
+
         # Check for stalls using ping command data
         if time.time() - self.pingCommander.last_ping > self.TIMEOUT:
             rospy.logwarn("Copro Connection Timed Out... Dropping Connection")
@@ -851,7 +873,7 @@ class CoproDriver:
             if not self.command_queueing_permitted:
                 return False
             
-            self.command_queue.append([data, response_command, extra_data])
+            self.command_queue.append([data, response_command, extra_data, time.time()])
             return True
         else:
             rospy.logwarn_throttle(5, "Copro commands dropped: Command Buffer Full")
@@ -965,13 +987,16 @@ class CoproDriver:
         self.current_robot = rospy.get_param('~current_robot')
 
         if self.current_robot == PUDDLES_ROBOT:
-            self.IP_ADDR = '192.168.1.42'
+            self.IP_ADDR = 'localhost'
         elif self.current_robot == TITAN_ROBOT:
             self.IP_ADDR = '192.168.1.43'
         else:
             raise RuntimeError("Invalid Robot Specified")
 
         self.connection_pub = rospy.Publisher('state/copro', Bool, queue_size=1)
+        self.connection_latency_pub = rospy.Publisher('state/copro/latency', UInt16, queue_size=1)
+        self.connection_tx_queue_len_pub = rospy.Publisher('state/copro/tx_len', Int8, queue_size=1)
+        self.connection_rx_pending_queue_len_pub = rospy.Publisher('state/copro/rx_pending_len', Int8, queue_size=1)
         
         # Implement command loading here
         self.pwmCommander = PwmCommand(self)
