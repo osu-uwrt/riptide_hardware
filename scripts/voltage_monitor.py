@@ -42,7 +42,7 @@ class BatteryVoltageTask(DiagnosticTask):
         self._stbd_voltage = ExpiringMessage(ROS_MESSAGE_LIFETIME)
         self._port_voltage = ExpiringMessage(ROS_MESSAGE_LIFETIME)
 
-        rospy.Subscriber('state/battery_voltage', Float32MultiArray, self.battery_voltage_callback)
+        rospy.Subscriber('state/battery_voltage', Float32MultiArray, self.battery_voltage_callback, queue_size=1)
 
     def battery_voltage_callback(self, msg):
         self._port_voltage.update_value(msg.data[0])
@@ -103,7 +103,7 @@ class BatteryCurrentTask(DiagnosticTask):
         self._stbd_current = ExpiringMessage(ROS_MESSAGE_LIFETIME)
         self._port_current = ExpiringMessage(ROS_MESSAGE_LIFETIME)
 
-        rospy.Subscriber('state/battery_current', Float32MultiArray, self.battery_current_callback)
+        rospy.Subscriber('state/battery_current', Float32MultiArray, self.battery_current_callback, queue_size=1)
 
     def battery_current_callback(self, msg):
         self._port_current.update_value(msg.data[0])
@@ -152,8 +152,8 @@ class ThrusterCurrentTask(DiagnosticTask):
         self._thruster_currents = ExpiringMessage(ROS_MESSAGE_LIFETIME)
         self._kill_switch_engaged = ExpiringMessage(ROS_MESSAGE_LIFETIME)
 
-        rospy.Subscriber('state/thruster_currents', Float32MultiArray, self.thruster_current_callback)
-        rospy.Subscriber('state/switches', SwitchState, self.kill_switch_callback)
+        rospy.Subscriber('state/thruster_currents', Float32MultiArray, self.thruster_current_callback, queue_size=1)
+        rospy.Subscriber('state/switches', SwitchState, self.kill_switch_callback, queue_size=1)
 
     def kill_switch_callback(self, msg):
         self._kill_switch_engaged.update_value(msg.kill)
@@ -243,7 +243,7 @@ class FiveVoltMonitorTask(DiagnosticTask):
 
         self._rail_voltage = ExpiringMessage(ROS_MESSAGE_LIFETIME)
 
-        rospy.Subscriber('state/voltage_5', Float32, self.voltage_rail_callback)
+        rospy.Subscriber('state/voltage_5', Float32, self.voltage_rail_callback, queue_size=1)
 
     def voltage_rail_callback(self, msg):
         self._rail_voltage.update_value(float(msg.data))
@@ -275,7 +275,7 @@ class TwelveVoltMonitorTask(DiagnosticTask):
 
         self._rail_voltage = ExpiringMessage(ROS_MESSAGE_LIFETIME)
 
-        rospy.Subscriber('state/voltage_12', Float32, self.voltage_rail_callback)
+        rospy.Subscriber('state/voltage_12', Float32, self.voltage_rail_callback, queue_size=1)
 
     def voltage_rail_callback(self, msg):
         self._rail_voltage.update_value(float(msg.data))
@@ -307,7 +307,7 @@ class BalancedVoltageMonitorTask(DiagnosticTask):
 
         self._rail_voltage = ExpiringMessage(ROS_MESSAGE_LIFETIME)
 
-        rospy.Subscriber('state/voltage_balanced', Float32, self.voltage_rail_callback)
+        rospy.Subscriber('state/voltage_balanced', Float32, self.voltage_rail_callback, queue_size=1)
 
     def voltage_rail_callback(self, msg):
         self._rail_voltage.update_value(float(msg.data))

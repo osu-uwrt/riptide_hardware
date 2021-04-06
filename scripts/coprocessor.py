@@ -145,7 +145,7 @@ def toBytes(num):
 class PwmCommand(BaseCoproCommand):
     def __init__(self, driver):
         BaseCoproCommand.__init__(self, driver, THRUSTER_FORCE_CMD)
-        rospy.Subscriber('command/pwm', Int16MultiArray, self.pwm_callback)
+        rospy.Subscriber('command/pwm', Int16MultiArray, self.pwm_callback, queue_size=1)
 
     def pwm_callback(self, pwm_message):
         args = []
