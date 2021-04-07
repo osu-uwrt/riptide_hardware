@@ -1,0 +1,6 @@
+<launch>
+    <machine address="localhost" name="local" />
+    <arg name="computer" default="local" />
+  
+    <node pkg="riptide_hardware" type="computer_monitor.py" name="$(arg computer)_monitor" output="screen" machine="$(arg computer)" />
+  </launch>

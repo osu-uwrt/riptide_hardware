@@ -32,10 +32,10 @@
   <run_depend>image_proc</run_depend>
   <run_depend>stereo_image_proc</run_depend>
   <run_depend>camera_calibration</run_depend>
+  <run_depend>python-psutil</run_depend>
   <run_depend>tf</run_depend>
-  <run_depend>python3-numpy</run_depend>
-  <run_depend>python3-opencv</run_depend>
   <run_depend>video_stream_opencv</run_depend>
+  <run_depend>image_view</run_depend>
 
   <export>
   </export>
