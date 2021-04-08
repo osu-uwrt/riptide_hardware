@@ -293,10 +293,10 @@ def main():
         if current_robot == TITAN_ROBOT:
             updater.add(ActuatorStatusTask())
 
-    rate = rospy.Rate(rospy.get_param("~rate", 1))
-    while not rospy.is_shutdown():
-        rate.sleep()
-        updater.update()
+    rate = rospy.get_param("~rate", 1)
+    rospy.Timer(rospy.Duration(1 / rate), lambda _: updater.update())
+
+    rospy.spin()
 
 
 if __name__ == '__main__':

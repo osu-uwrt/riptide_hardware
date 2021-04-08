@@ -349,10 +349,10 @@ def main():
             updater.add(TwelveVoltMonitorTask(thresholds["twelve_volt"]["warn_min"], thresholds["twelve_volt"]["warn_max"]))
         updater.add(BalancedVoltageMonitorTask(rospy.get_param("~balanced_volt_warn_min", 19.5), rospy.get_param("~twelve_volt_warn_max", 22)))
 
-    rate = rospy.Rate(rospy.get_param("~rate", 1))
-    while not rospy.is_shutdown():
-        rate.sleep()
-        updater.update()
+    rate = rospy.get_param("~rate", 1)
+    rospy.Timer(rospy.Duration(1 / rate), lambda _: updater.update())
+
+    rospy.spin()
 
 
 if __name__ == '__main__':
