@@ -157,6 +157,7 @@
 
   <node machine="$(arg vision_computer)" name="image_proc" pkg="image_proc" type="image_proc" ns="$(arg name)/left" />
   <node machine="$(arg vision_computer)" name="image_proc" pkg="image_proc" type="image_proc" ns="$(arg name)/right" />
+  <node machine="$(arg vision_computer)" name="image_proc" pkg="image_proc" type="image_proc" ns="$(arg name)/depth" />
 
   <!-- disable compressed depth plugin for image topics -->
   <group ns="$(arg left_mono_topic)">
