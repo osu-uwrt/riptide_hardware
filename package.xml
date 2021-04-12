@@ -26,13 +26,14 @@
 
   <run_depend>riptide_msgs</run_depend>
   <run_depend>dynamic_reconfigure</run_depend>
+  <run_depend>diagnostic_aggregator</run_depend>
   <run_depend>roslaunch</run_depend>
   <run_depend>sensor_msgs</run_depend>
   <run_depend>message_runtime</run_depend>
   <run_depend>image_proc</run_depend>
   <run_depend>stereo_image_proc</run_depend>
   <run_depend>camera_calibration</run_depend>
-  <run_depend>python-psutil</run_depend>
+  <run_depend>python3-psutil</run_depend>
   <run_depend>tf</run_depend>
   <run_depend>video_stream_opencv</run_depend>
   <run_depend>image_view</run_depend>
