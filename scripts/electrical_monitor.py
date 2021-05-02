@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import rospy
 import socket
@@ -83,9 +83,9 @@ class CoprocessorStatusTask(DiagnosticTask):
         self._copro_connected = ExpiringMessage(ROS_MESSAGE_LIFETIME)
         self._copro_fault_list = ExpiringMessage(ROS_MESSAGE_LIFETIME)
 
-        rospy.Subscriber('state/copro', Bool, self.copro_state_callback)
-        rospy.Subscriber('state/copro_fault', UInt8MultiArray, self.copro_fault_list_callback)
-        rospy.Subscriber('state/copro_memory_usage', Float32, self.copro_memory_callback)
+        rospy.Subscriber('state/copro', Bool, self.copro_state_callback, queue_size=1)
+        rospy.Subscriber('state/copro_fault', UInt8MultiArray, self.copro_fault_list_callback, queue_size=1)
+        rospy.Subscriber('state/copro_memory_usage', Float32, self.copro_memory_callback, queue_size=1)
 
     def copro_state_callback(self, msg):
         self._copro_connected.update_value(msg.data)
@@ -152,9 +152,9 @@ class TemperatureTask(DiagnosticTask):
         self._temp_threshold = ExpiringMessage(ROS_MESSAGE_LIFETIME)
         self._peltier_power = ExpiringMessage(ROS_MESSAGE_LIFETIME)
 
-        rospy.Subscriber('state/temperature', Float32, self.temperature_callback)
-        rospy.Subscriber('state/peltier_power', Bool, self.peltier_power_callback)
-        rospy.Subscriber('state/temp_threshold', Int8, self.temp_threshold_callback)
+        rospy.Subscriber('state/temperature', Float32, self.temperature_callback, queue_size=1)
+        rospy.Subscriber('state/peltier_power', Bool, self.peltier_power_callback, queue_size=1)
+        rospy.Subscriber('state/temp_threshold', Int8, self.temp_threshold_callback, queue_size=1)
 
     def temperature_callback(self, msg):
         self._temperature.update_value(msg.data)
@@ -200,7 +200,7 @@ class DepthSensorTask(DiagnosticTask):
         DiagnosticTask.__init__(self, "Depth Sensor")
 
         self._connectecd = ExpiringMessage(ROS_MESSAGE_LIFETIME)
-        rospy.Subscriber('depth/connected', Bool, self.depth_connected_callback)
+        rospy.Subscriber('depth/connected', Bool, self.depth_connected_callback, queue_size=1)
 
     def depth_connected_callback(self, msg):
         self._connectecd.update_value(msg.data)
@@ -223,7 +223,7 @@ class KillSwitchTask(DiagnosticTask):
         DiagnosticTask.__init__(self, "Kill Switch")
 
         self._switch_engaged = ExpiringMessage(ROS_MESSAGE_LIFETIME)
-        rospy.Subscriber('state/switches', SwitchState, self.kill_switch_callback)
+        rospy.Subscriber('state/switches', SwitchState, self.kill_switch_callback, queue_size=1)
 
     def kill_switch_callback(self, msg):
         self._switch_engaged.update_value(msg.kill)
@@ -248,8 +248,8 @@ class ActuatorStatusTask(DiagnosticTask):
         self._actuator_fault = ExpiringMessage(ROS_MESSAGE_LIFETIME)
         self._actuator_connected = ExpiringMessage(ROS_MESSAGE_LIFETIME)
 
-        rospy.Subscriber('state/actuator', Bool, self.actuator_state_callback)
-        rospy.Subscriber('state/actuator_fault', Bool, self.actuator_fault_callback)
+        rospy.Subscriber('state/actuator', Bool, self.actuator_state_callback, queue_size=1)
+        rospy.Subscriber('state/actuator_fault', Bool, self.actuator_fault_callback, queue_size=1)
 
     def actuator_state_callback(self, msg):
         self._actuator_connected.update_value(msg.data)
@@ -293,10 +293,10 @@ def main():
         if current_robot == TITAN_ROBOT:
             updater.add(ActuatorStatusTask())
 
-    rate = rospy.Rate(rospy.get_param("~rate", 1))
-    while not rospy.is_shutdown():
-        rate.sleep()
-        updater.update()
+    rate = rospy.get_param("~rate", 1)
+    rospy.Timer(rospy.Duration(1 / rate), lambda _: updater.update())
+
+    rospy.spin()
 
 
 if __name__ == '__main__':

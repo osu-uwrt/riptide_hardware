@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import rospy
 import socket
@@ -34,8 +34,8 @@ class DVLSensorTask(DiagnosticTask):
         self._dvl_status = ExpiringMessage(ROS_MESSAGE_LIFETIME)
         self._dvl_twist = ExpiringMessage(ROS_MESSAGE_LIFETIME)
 
-        rospy.Subscriber('dvl/status', DvlStatus, self.dvl_status_callback)
-        rospy.Subscriber('dvl_twist', TwistWithCovarianceStamped, self.dvl_twist_callback)
+        rospy.Subscriber('dvl/status', DvlStatus, self.dvl_status_callback, queue_size=1)
+        rospy.Subscriber('dvl_twist', TwistWithCovarianceStamped, self.dvl_twist_callback, queue_size=1)
 
     def dvl_status_callback(self, msg):
         self._dvl_status.update_value(msg)
@@ -93,7 +93,7 @@ class IMUSensorTask(DiagnosticTask):
 
         self._imu_status = ExpiringMessage(ROS_MESSAGE_LIFETIME)
 
-        rospy.Subscriber('imu/imu', Imu, self.imu_callback)
+        rospy.Subscriber('imu/imu', Imu, self.imu_callback, queue_size=1)
 
     def imu_callback(self, msg):
         self._imu_status.update_value(True)
@@ -119,10 +119,10 @@ def main():
     updater.add(DVLSensorTask())
     updater.add(IMUSensorTask())
 
-    rate = rospy.Rate(rospy.get_param("~rate", 1))
-    while not rospy.is_shutdown():
-        rate.sleep()
-        updater.update()
+    rate = rospy.get_param("~rate", 1)
+    rospy.Timer(rospy.Duration(1 / rate), lambda _: updater.update())
+
+    rospy.spin()
 
 
 if __name__ == '__main__':

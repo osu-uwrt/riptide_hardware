@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import socket
 import psutil
@@ -189,10 +189,10 @@ def main():
     if GPUTask.has_hardware():
         updater.add(GPUTask(rospy.get_param("~gpu_warning_percentage", 90)))
 
-    rate = rospy.Rate(rospy.get_param("~rate", 1))
-    while not rospy.is_shutdown():
-        rate.sleep()
-        updater.update()
+    rate = rospy.get_param("~rate", 1)
+    rospy.Timer(rospy.Duration(1 / rate), lambda _: updater.update())
+
+    rospy.spin()
 
 
 if __name__ == '__main__':
