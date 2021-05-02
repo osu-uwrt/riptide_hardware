@@ -54,7 +54,7 @@ PUDDLES_ROBOT = "puddles"
 TITAN_ROBOT = "titan"
 
 # Copro Commands
-CONN_HELLO_MESSAGE = "\010UWRT_Hi"
+CONN_HELLO_MESSAGE = b"\010UWRT_Hi"
 CONN_LATENCY_NEW_WEIGHT = 0.02
 
 MOBO_POWER_CMD = 0
@@ -987,7 +987,7 @@ class CoproDriver:
         self.current_robot = rospy.get_param('~current_robot')
 
         if self.current_robot == PUDDLES_ROBOT:
-            self.IP_ADDR = 'localhost'
+            self.IP_ADDR = '192.168.1.42'
         elif self.current_robot == TITAN_ROBOT:
             self.IP_ADDR = '192.168.1.43'
         else:
