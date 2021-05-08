@@ -6,7 +6,6 @@ import time
 import yaml
 from std_msgs.msg import Bool, Float32, UInt8MultiArray, Int8
 from diagnostic_msgs.msg import DiagnosticStatus
-from riptide_msgs.msg import SwitchState
 from diagnostic_updater import DiagnosticTask, Updater
 
 # Robot Types
@@ -223,10 +222,10 @@ class KillSwitchTask(DiagnosticTask):
         DiagnosticTask.__init__(self, "Kill Switch")
 
         self._switch_engaged = ExpiringMessage(ROS_MESSAGE_LIFETIME)
-        rospy.Subscriber('state/switches', SwitchState, self.kill_switch_callback, queue_size=1)
+        rospy.Subscriber('state/kill_switch', Bool, self.kill_switch_callback, queue_size=1)
 
     def kill_switch_callback(self, msg):
-        self._switch_engaged.update_value(msg.kill)
+        self._switch_engaged.update_value(msg)
 
     def run(self, stat):
         switch_engaged = self._switch_engaged.get_value()

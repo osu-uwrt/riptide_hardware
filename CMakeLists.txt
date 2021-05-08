@@ -20,6 +20,16 @@ find_package(catkin REQUIRED
 
 find_package(Eigen3 REQUIRED)
 
+add_message_files(
+    FILES
+    Depth.msg
+)
+
+generate_messages(
+    DEPENDENCIES 
+    std_msgs
+)
+
 generate_dynamic_reconfigure_options(
   cfg/Torpedo.cfg
 )

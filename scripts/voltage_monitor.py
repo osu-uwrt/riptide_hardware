@@ -6,7 +6,6 @@ import time
 import yaml
 from std_msgs.msg import Bool, Float32, Float32MultiArray
 from diagnostic_msgs.msg import DiagnosticStatus
-from riptide_msgs.msg import SwitchState
 from diagnostic_updater import DiagnosticTask, Updater
 
 # Robot Types
@@ -153,10 +152,10 @@ class ThrusterCurrentTask(DiagnosticTask):
         self._kill_switch_engaged = ExpiringMessage(ROS_MESSAGE_LIFETIME)
 
         rospy.Subscriber('state/thruster_currents', Float32MultiArray, self.thruster_current_callback, queue_size=1)
-        rospy.Subscriber('state/switches', SwitchState, self.kill_switch_callback, queue_size=1)
+        rospy.Subscriber('state/kill_switch', Bool, self.kill_switch_callback, queue_size=1)
 
     def kill_switch_callback(self, msg):
-        self._kill_switch_engaged.update_value(msg.kill)
+        self._kill_switch_engaged.update_value(msg)
 
     def thruster_current_callback(self, msg):
         self._thruster_currents.update_value(list(map(float, msg.data)))
