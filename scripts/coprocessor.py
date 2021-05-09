@@ -22,7 +22,8 @@ Publishers:
 'state/voltage_balanced' (Float32): The voltage of the balanced battery (V+) rail
 'state/battery_current' (Float32MultiArray): The current of port and starboard batteries
 'state/temperature' (Float32): The temperature of the robot electronics
-'state/switches' (SwitchState): The readings of the switches (only kill switch and sw1 implemented)
+'state/kill_switch' (Bool): The state of the kill switch
+'state/aux_switch' (Bool): The state of the aux switch
 'state/thruster_currents' (Float32MultiArray): The currents of the thrusters
 'state/copro_memory_usage' (Float32): The memory usage of the copro (decimal out of 1)
 'state/temp_threshold' (Int8): The temperature threshold (in Deg C) before the peltier turns on
@@ -35,16 +36,14 @@ Publishers:
 'state/copro' (Bool): If the copro is connected to the robot
 """
 
-import errno
 import rospy
 import socket
 import select
 import time
 import traceback
-from threading import Thread, Lock
 from collections import deque
-from std_msgs.msg import String, Header, Bool, Float32MultiArray, Int8, UInt16, Float32, Int16MultiArray, UInt8MultiArray
-from riptide_msgs.msg import Depth, PwmStamped, StatusLight, SwitchState
+from std_msgs.msg import Bool, Float32MultiArray, Int8, UInt16, Float32, Int16MultiArray, UInt8MultiArray
+from riptide_hardware.msg import Depth
 from riptide_hardware.cfg import CoprocessorDriverConfig
 from dynamic_reconfigure.server import Server
 import yaml
@@ -284,30 +283,28 @@ class SwitchCommand(BaseCoproCommand):
     def __init__(self, driver):
         BaseCoproCommand.__init__(self, driver, GET_SWITCHES_CMD)
         self.last_kill_switch_state = False
-        self.switch_pub = rospy.Publisher('state/switches', SwitchState, queue_size=1)
+        self.kill_switch_pub = rospy.Publisher('state/kill_switch', Bool, queue_size=1)
+        self.aux_switch_pub = rospy.Publisher('state/aux_switch', Bool, queue_size=1)
         self.critical_tasks.append(rospy.Timer(rospy.Duration(0.2), self.switch_callback))
 
     def switch_callback(self, event):
-        if self.switch_pub.get_num_connections() > 0:
+        if self.kill_switch_pub.get_num_connections() > 0 or self.aux_switch_pub.get_num_connections() > 0:
             self.driver.enqueueCommand(GET_SWITCHES_CMD)
     
     def commandCallback(self, response, extra_data):
         if len(response) != 1:
             rospy.logerr("Improper switches response: " + str(response))
         else:
-            switch_msg = SwitchState()
-            switch_msg.header.stamp = rospy.Time.now()
-            switch_msg.kill = bool(response[0] & (1 << 0))
-            switch_msg.sw1 = bool(response[0] & (1 << 1))
+            kill_state = bool(response[0] & (1 << 0))
+            self.kill_switch_pub.publish(kill_state)
+            self.aux_switch_pub.publish(bool(response[0] & (1 << 1)))
 
-            if self.last_kill_switch_state is not switch_msg.kill:
-                if switch_msg.kill:
+            if self.last_kill_switch_state is not kill_state:
+                if kill_state:
                     rospy.loginfo("Kill switch engaged")
                 else:
                     rospy.loginfo("Kill switch disengaged")
-                self.last_kill_switch_state = switch_msg.kill
-
-            self.switch_pub.publish(switch_msg)
+                self.last_kill_switch_state = kill_state
 
 
 class ThrusterCurrentCommand(BaseCoproCommand):
