@@ -10,7 +10,6 @@ find_package(catkin REQUIRED
     COMPONENTS
     roslint
     roscpp
-    riptide_msgs
     geometry_msgs
     message_filters
     message_generation
