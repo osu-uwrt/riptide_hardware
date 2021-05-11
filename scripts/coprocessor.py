@@ -694,6 +694,7 @@ class CoproDriver:
         try:
             # Try Connect
             self.copro = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.copro.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             self.copro.settimeout(self.TIMEOUT)
             self.copro.connect((self.IP_ADDR, 50000))
 
@@ -704,6 +705,7 @@ class CoproDriver:
             assert data == CONN_HELLO_MESSAGE
 
             self.copro.settimeout(self.TIMEOUT)
+            self.copro.setblocking(False)
 
             self.connected = True
         except:
@@ -761,6 +763,7 @@ class CoproDriver:
                 while len(self.command_queue) != 0:
                     # Make sure there is enough space in the response queue to send another command
                     if len(self.response_queue) >= self.response_queue.maxlen:
+                        rospy.logwarn_throttle(5, "Receive Buffer Full")
                         break
                     
                     # Get the data packet to send from the command data
@@ -770,8 +773,8 @@ class CoproDriver:
                     # If response is expected, queue the cut command data
                     if command_data[0] is not None:
                         self.response_queue.append(command_data)
-                
-                self.copro.sendall(bytearray(command))
+                if len(command) != 0:
+                    self.copro.sendall(bytearray(command))
 
         # Handle incoming packets if there is data in receive buffer
         if len(readable) > 0:
@@ -808,7 +811,7 @@ class CoproDriver:
                 if self.connection_latency == -1:
                     self.connection_latency = command_latency
                 else:
-                    self.connection_latency = (self.connection_latency * (1-CONN_LATENCY_NEW_WEIGHT)) + (command_latency * CONN_LATENCY_NEW_WEIGHT)
+                    self.connection_latency = int((self.connection_latency * (1-CONN_LATENCY_NEW_WEIGHT)) + (command_latency * CONN_LATENCY_NEW_WEIGHT))
 
                 # The copro connection will return an empty packet if it failed to execute the command
                 # If this is the case, don't execute the callback, and instead log error
@@ -1023,7 +1026,7 @@ class CoproDriver:
         # Task Monitoring
         try:
             while not rospy.is_shutdown():
-                rospy.sleep(0.1)
+                rospy.sleep(0.5)
 
                 # Check command tasks
                 for command_id in self.registered_commands:
