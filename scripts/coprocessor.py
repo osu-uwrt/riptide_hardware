@@ -42,6 +42,7 @@ import select
 import time
 import traceback
 from collections import deque
+from typing import Any, Dict, List
 from std_msgs.msg import Bool, Float32MultiArray, Int8, UInt16, Float32, Int16MultiArray, UInt8MultiArray
 from riptide_hardware.msg import Depth
 from riptide_hardware.cfg import CoprocessorDriverConfig
@@ -91,16 +92,23 @@ ACTUATOR_SET_GRIPPER_PWM_CMD = 7        # Implemented
 # Actuator command constant
 ACTUATOR_TRY_FAIL = 0xFF
 
-class BaseCoproCommand:
-    """List of non critical tasks to monitor"""
-    tasks = None
+########################################
+#region Utility/Skeleton Classes
+########################################
 
+class BaseCoproCommand:
+    """The base copro command class for which all copro commands must use as a base class
+    """
+
+    tasks: List[rospy.Timer]
+    """List of non critical tasks to monitor"""
+
+    critical_tasks: List[rospy.Timer]
     """List of critical tasks to monitor.
     If any of these tasks stop, the code will restart
     """
-    critical_tasks = None
 
-    def __init__(self, driver, command_id):
+    def __init__(self, driver: 'CoproDriver', command_id: int):
         """Initializes the Command and registers it with the CoproDriver
 
         Args:
@@ -110,10 +118,10 @@ class BaseCoproCommand:
         self.critical_tasks = []
         self.tasks = []
 
-        self.driver = driver
+        self.driver: 'CoproDriver' = driver
         self.driver.registerCommand(self)
 
-    def getCommandId(self):
+    def getCommandId(self) -> int:
         """The command id for the class
 
         Returns:
@@ -121,7 +129,7 @@ class BaseCoproCommand:
         """
         return self._command_id
 
-    def commandCallback(self, response, extra_data):
+    def commandCallback(self, response: List[int], extra_data: Any) -> None:
         """The callback for after a command has been executed
 
         Args:
@@ -130,7 +138,7 @@ class BaseCoproCommand:
         raise NotImplementedError()
 
 
-def toBytes(num):
+def toBytes(num: int) -> List[int]:
     """Converts 16-bit integer to 8-bit integer array
 
     Args:
@@ -139,8 +147,14 @@ def toBytes(num):
     Returns:
         list: An 8-bit integer list
     """
+    assert num < 2**16
     return [num // 256, num % 256]
 
+#endregion
+
+########################################
+#region Command Classes
+########################################
 
 class PwmCommand(BaseCoproCommand):
     def __init__(self, driver):
@@ -612,30 +626,36 @@ class PingCommand(BaseCoproCommand):
         else:
             self.last_ping = time.time()
 
+#endregion
+
+
+########################################
+#region Copro Driver Class
+########################################
 
 class CoproDriver:
     # The general timeout used for connecting and for connection stalls
     TIMEOUT = 2.0
 
     # The IP address to use to connect
-    IP_ADDR = None
+    IP_ADDR: str
 
     # The ros publishers for the copro connection state
-    connection_pub = None
-    connection_latency_pub = None
-    connection_tx_queue_len_pub = None
-    connection_rx_pending_queue_len_pub = None
+    connection_pub: rospy.Publisher
+    connection_latency_pub: rospy.Publisher
+    connection_tx_queue_len_pub: rospy.Publisher
+    connection_rx_pending_queue_len_pub: rospy.Publisher
 
     # The timer scheduling the copro communication task
-    copro_comm_timer = None
+    copro_comm_timer: rospy.Timer
 
     # The config parameter passed with the current robot
     current_robot = None
 
     # Commands with specific features used directly in the copro driver
-    actuatorCommander = None     # The instance of ActuatorCommand (used for actuator callback configuration)
-    pingCommander = None         # The instance of PingCommand (used for timeouts)
-    pwmCommander = None          # The instance of PwmCommand (used for getting the stop thruster command during disconnect)
+    actuatorCommander: ActuatorCommand  # The instance of ActuatorCommand (used for actuator callback configuration)
+    pingCommander: PingCommand          # The instance of PingCommand (used for timeouts)
+    pwmCommander: PwmCommand            # The instance of PwmCommand (used for getting the stop thruster command during disconnect)
 
     def __init__(self):
         """Initializes new instance of CoproDriver class
@@ -643,7 +663,7 @@ class CoproDriver:
 
         # The registered commands with the command id as the key and BaseCoproCommand implementation as value
         # Should only be written by registerCommand and deregisterCommand
-        self.registered_commands = {}
+        self.registered_commands: Dict[int, BaseCoproCommand] = {}
 
         ########################################
         ### Note: These variables are safe to be used by all class methods, including enqueueCommand
@@ -690,7 +710,7 @@ class CoproDriver:
     # Connection Management Code           #
     ########################################
 
-    def tryConnect(self):
+    def tryConnect(self) -> None:
         try:
             # Try Connect
             self.copro = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -712,7 +732,7 @@ class CoproDriver:
             # Close down the connection properly for all states of connect
             self.closeConnection()
 
-    def closeConnection(self):
+    def closeConnection(self) -> None:
         """Closes the connection to the copro
         Should only be called from copro comm task
 
@@ -748,13 +768,13 @@ class CoproDriver:
         self.command_queue.clear()
         self.response_queue.clear()
 
-    def doCoproCommunication(self):
+    def doCoproCommunication(self) -> None:
         """Sends any pending commands to copro and processes any data returned
         """
         # Publish the number of commands in queue before they are handled
         self.connection_tx_queue_len_pub.publish(len(self.command_queue))
 
-        readable, writable, exceptional = select.select([self.copro], [self.copro], [self.copro], 0)
+        readable, writable, _ = select.select([self.copro], [self.copro], [], 0)
 
         # Handle outgoing packets if there is room in send buffer
         if len(writable) > 0:
@@ -789,9 +809,6 @@ class CoproDriver:
                         self.closeConnection()
                         break
 
-                    # If this is running in python 2, it will return a string rather than bytes, so convert to int list
-                    if not isinstance(recv_data[0], int):
-                        recv_data = list(map(ord, recv_data))
                     self.buffer += recv_data
             except socket.error:
                 pass
@@ -842,7 +859,7 @@ class CoproDriver:
     # Public Methods                       #
     ########################################
 
-    def enqueueCommand(self, command, args = [], is_reset = False, extra_data = None):
+    def enqueueCommand(self, command, args = [], is_reset = False, extra_data = None) -> bool:
         """Adds command to queue to be sent to copro
 
         Args:
@@ -879,7 +896,7 @@ class CoproDriver:
             rospy.logwarn_throttle(5, "Copro commands dropped: Command Buffer Full")
             return False
 
-    def registerCommand(self, receiver):
+    def registerCommand(self, receiver: BaseCoproCommand) -> None:
         """Registers a receiver to process a command
 
         Args:
@@ -892,7 +909,7 @@ class CoproDriver:
             raise RuntimeError("Command already registered")
         self.registered_commands[receiver.getCommandId()] = receiver
 
-    def deregisterCommand(self, receiver):
+    def deregisterCommand(self, receiver: BaseCoproCommand) -> None:
         """Removes the receiver from processing commands
 
         Args:
@@ -914,7 +931,7 @@ class CoproDriver:
     # Copro Communication Task             #
     ########################################
 
-    def coproCommTask(self, event):
+    def coproCommTask(self, event: rospy.timer.TimerEvent) -> None:
         """Manages the connection with the copro
         Should only be called from Timer callback
 
@@ -964,7 +981,7 @@ class CoproDriver:
     # Main Methods                         #
     ########################################
 
-    def onShutdown(self):
+    def onShutdown(self) -> None:
         """Called when rospy is shutting down
         Should only be called from on_shutdown callback
         """
@@ -975,7 +992,7 @@ class CoproDriver:
             rospy.sleep(0.01)
 
 
-    def main(self):
+    def main(self) -> None:
         """Runs the coprocessor_driver ros node
 
         Raises:
@@ -1049,6 +1066,8 @@ class CoproDriver:
         except:
             rospy.logfatal("Killing coprocessor_driver node: Task monitor crashed")
             raise
+
+#endregion
 
 if __name__ == '__main__':
     coproDriver = CoproDriver()
