@@ -42,7 +42,7 @@ import select
 import time
 import traceback
 from collections import deque
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
 from std_msgs.msg import Bool, Float32MultiArray, Int8, UInt16, Float32, Int16MultiArray, UInt8MultiArray
 from riptide_hardware.msg import Depth
 from riptide_hardware.cfg import CoprocessorDriverConfig
@@ -96,6 +96,105 @@ ACTUATOR_TRY_FAIL = 0xFF
 #region Utility/Skeleton Classes
 ########################################
 
+class QueuedCommand:
+    """Holds the data for a command to be sent to the copro
+    """
+
+    command_id: int
+    """The ID of the command"""
+
+    receives_response: bool
+    """True if the command will receive a response from the copro"""
+
+    extra_data: Any
+    """Extra data queued with the command"""
+
+    def __init__(self, command_id: int, command_data: List[int], extra_data: Any, receives_response: bool):
+        """Initializes a new command instance and sets the create time to the current time
+
+        Args:
+            command_id (int): The command id of the command
+            command_data (List[int]): Data to be added to the command
+            extra_data (Any): Data to be passed to the command callback
+            requires_resopnse (bool): Determines if the command will receive a response from the copro
+        """
+
+        # Initialize Public Variables
+        self.command_id = command_id
+        self.receives_response = receives_response
+        self.extra_data = extra_data
+
+        # Initialize Private Variables
+        self._command_data = command_data       # The extra data for the command
+        self._create_time = time.time()         # The time the command object was initially created
+        self._modify_time = self._create_time   # The time that the data queued was entered into the command (updated during replaces)
+        self._command_sent = False              # True if the command has been sent to the copro
+        self._command_received = False          # True if a response to the command has been received from the copro (this class's purpose is now complete)
+
+    def replace_command_data(self, command_data: List[int], last_clear: float) -> bool:
+        """Checks if the command has been sent, and if it hasn't, updates the data to be sent with the command with the data passed.
+        
+        Args:
+            command_data (List[int]): The updated command data
+            last_clear (float): The time in seconds since epoch of the last clear of the command/response queues
+        
+        Returns:
+            bool: If the update was successful
+        """
+
+        # The command can't be updated if it has been already sent
+        if self._command_sent:
+            return False
+
+        # The command can't be updated if it was queued before the last clear
+        if last_clear > self._modify_time:
+            return False
+        
+        # Update command with replacement data
+        self._command_data = command_data
+        self._modify_time = time.time()
+        return True
+    
+    def update_sent(self) -> bytearray:
+        """Updates the command to being sent from the copro and returns a bytearray of the command to be sent
+        
+        Returns:
+            bytes: The encoded command to be sent to the copro
+        """
+        if self._command_sent:
+            rospy.logerr("Command {} marked as sent twice".format(self.command_id))
+
+        # Update command state to sent
+        self._command_sent = True
+
+        command_data = self._command_data
+
+        # Command Pakcet Format
+        # Byte 0: Length (Including length byte)
+        # Byte 1: Command ID
+        # Byte 2-n: Args
+        encoded_command = [len(command_data) + 2, self.command_id]
+        encoded_command += command_data
+        return bytearray(encoded_command)
+
+    def update_received(self) -> float:
+        """Updates the command to being received from the copro and returns the total latency of the command
+        
+        Returns:
+            float: Total trip time of command in seconds
+        """
+        if not self._command_sent:
+            rospy.logerr("Command {} received without being transmitted".format(self.command_id))
+        
+        if self._command_received:
+            rospy.logerr("Command {} marked as received twice".format(self.command_id))
+
+        # Update command to received
+        self._command_received = True
+
+        # Calculate latency of command
+        return time.time() - self._modify_time
+
 class BaseCoproCommand:
     """The base copro command class for which all copro commands must use as a base class
     """
@@ -108,16 +207,29 @@ class BaseCoproCommand:
     If any of these tasks stop, the code will restart
     """
 
-    def __init__(self, driver: 'CoproDriver', command_id: int):
+    _last_queued_command: Union[QueuedCommand, None] = None
+    """The last command queued, used for replacing duplicate commands
+    """
+
+    def __init__(self, driver: 'CoproDriver', command_id: int, replace_duplicates: bool, receives_response = True):
         """Initializes the Command and registers it with the CoproDriver
 
         Args:
             driver (CoproDriver): The instance of CoproDriver to register the command with
+            command_id (int): The command id to be sent
+            replace_duplicates: If queued commands replace existing commands that have been queued
+            receives_response: If the command gets a response from the copro
         """
+        # Initialize Private Variables
         self._command_id = command_id
+        self._replace_duplicates = replace_duplicates
+        self._receives_response = receives_response
+
+        # Initialize Task Arrays
         self.critical_tasks = []
         self.tasks = []
 
+        # Register Command
         self.driver: 'CoproDriver' = driver
         self.driver.registerCommand(self)
 
@@ -128,6 +240,31 @@ class BaseCoproCommand:
             int: The id of the command
         """
         return self._command_id
+
+    def enqueueCommand(self, command_data: List[int] = [], extra_data: Any = None) -> None:
+        """Enqueues the command to be sent. If replace duplicates is enabled,this will instead
+        replace the command currently queued if it has not been sent yet.
+
+        Args:
+            command_data (List[int]): Data to be added to the command
+            extra_data (Any): Data to be passed to the command callback
+        """
+        command_enqueue_needed = True
+
+        # Try to replace the command if it should and there is a command to replace
+        if self._replace_duplicates and self._last_queued_command is not None:
+            command_enqueue_needed = not self._last_queued_command.replace_command_data(command_data, self.driver.last_queue_clear)
+
+        # If a command needs to be queued, do so
+        if command_enqueue_needed:
+            command = QueuedCommand(self._command_id, command_data, extra_data, self._receives_response)
+            succesfully_queued = self.driver.enqueueCommand(command)
+            
+            # Save the command if it can replaced
+            if self._replace_duplicates and succesfully_queued:
+                self._last_queued_command = command
+            else:
+                self._last_queued_command = None
 
     def commandCallback(self, response: List[int], extra_data: Any) -> None:
         """The callback for after a command has been executed
@@ -152,13 +289,14 @@ def toBytes(num: int) -> List[int]:
 
 #endregion
 
+
 ########################################
 #region Command Classes
 ########################################
 
 class PwmCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver, THRUSTER_FORCE_CMD)
+        BaseCoproCommand.__init__(self, driver, THRUSTER_FORCE_CMD, replace_duplicates=True)
         rospy.Subscriber('command/pwm', Int16MultiArray, self.pwm_callback, queue_size=1)
 
     def pwm_callback(self, pwm_message):
@@ -171,7 +309,7 @@ class PwmCommand(BaseCoproCommand):
         args += toBytes(pwm_message.data[5])
         args += toBytes(pwm_message.data[6])
         args += toBytes(pwm_message.data[7])
-        self.driver.enqueueCommand(THRUSTER_FORCE_CMD, args)
+        self.enqueueCommand(args)
 
     def stopThrustersCommand(self):
         # This the command that will put the thrusters into a stopped state
@@ -190,7 +328,7 @@ class PwmCommand(BaseCoproCommand):
 
 class DepthCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver, GET_DEPTH_CMD)
+        BaseCoproCommand.__init__(self, driver, GET_DEPTH_CMD, replace_duplicates=True)
         self.depth_pub = rospy.Publisher('depth/raw', Depth, queue_size=1)
         self.depth_connected_pub = rospy.Publisher('depth/connected', Bool, queue_size=1)
         self.depth_connected_pub.publish(False)
@@ -202,7 +340,7 @@ class DepthCommand(BaseCoproCommand):
 
     def depth_callback(self, event):
         if self.depth_pub.get_num_connections() > 0 or self.depth_connected_pub.get_num_connections() > 0:
-            self.driver.enqueueCommand(GET_DEPTH_CMD)
+            self.enqueueCommand()
     
     def commandCallback(self, response, extra_data):
         if len(response) != 4:
@@ -229,7 +367,7 @@ class DepthCommand(BaseCoproCommand):
 
 class BatteryVoltageCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver, BATTERY_VOLTAGE_CMD)
+        BaseCoproCommand.__init__(self, driver, BATTERY_VOLTAGE_CMD, replace_duplicates=True)
         self.batVoltage_pub = rospy.Publisher('state/battery_voltage', Float32MultiArray, queue_size=1)
         self.balanced_voltage_pub = rospy.Publisher('state/voltage_balanced', Float32, queue_size=1)
 
@@ -237,7 +375,7 @@ class BatteryVoltageCommand(BaseCoproCommand):
 
     def battery_voltage_callback(self, event):   
         if self.batVoltage_pub.get_num_connections() > 0 or self.balanced_voltage_pub.get_num_connections() > 0:
-            self.driver.enqueueCommand(BATTERY_VOLTAGE_CMD)
+            self.enqueueCommand()
     
     def commandCallback(self, response, extra_data):
         if len(response) == 1 and response[0] == 0:
@@ -254,13 +392,13 @@ class BatteryVoltageCommand(BaseCoproCommand):
 
 class BatteryCurrentCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver, BATTERY_CURRENT_CMD)
+        BaseCoproCommand.__init__(self, driver, BATTERY_CURRENT_CMD, replace_duplicates=True)
         self.batCurrent_pub = rospy.Publisher('state/battery_current', Float32MultiArray, queue_size=1)
         self.tasks.append(rospy.Timer(rospy.Duration(1), self.battery_current_callback))
 
     def battery_current_callback(self, event):   
         if self.batCurrent_pub.get_num_connections() > 0:
-            self.driver.enqueueCommand(BATTERY_CURRENT_CMD)
+            self.enqueueCommand()
 
     def commandCallback(self, response, extra_data):
         if len(response) == 1 and response[0] == 0:
@@ -275,13 +413,13 @@ class BatteryCurrentCommand(BaseCoproCommand):
 
 class TemperatureCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver, TEMPERATURE_CMD)
+        BaseCoproCommand.__init__(self, driver, TEMPERATURE_CMD, replace_duplicates=True)
         self.temperature_pub = rospy.Publisher('state/temperature', Float32, queue_size=1)
         self.tasks.append(rospy.Timer(rospy.Duration(0.5), self.temperature_callback))
 
     def temperature_callback(self, event):   
         if self.temperature_pub.get_num_connections() > 0:
-            self.driver.enqueueCommand(TEMPERATURE_CMD)
+            self.enqueueCommand()
     
     def commandCallback(self, response, extra_data):
         if len(response) == 1 and response[0] == 0:
@@ -295,7 +433,7 @@ class TemperatureCommand(BaseCoproCommand):
 
 class SwitchCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver, GET_SWITCHES_CMD)
+        BaseCoproCommand.__init__(self, driver, GET_SWITCHES_CMD, replace_duplicates=True)
         self.last_kill_switch_state = False
         self.kill_switch_pub = rospy.Publisher('state/kill_switch', Bool, queue_size=1)
         self.aux_switch_pub = rospy.Publisher('state/aux_switch', Bool, queue_size=1)
@@ -303,7 +441,7 @@ class SwitchCommand(BaseCoproCommand):
 
     def switch_callback(self, event):
         if self.kill_switch_pub.get_num_connections() > 0 or self.aux_switch_pub.get_num_connections() > 0:
-            self.driver.enqueueCommand(GET_SWITCHES_CMD)
+            self.enqueueCommand()
     
     def commandCallback(self, response, extra_data):
         if len(response) != 1:
@@ -323,13 +461,13 @@ class SwitchCommand(BaseCoproCommand):
 
 class ThrusterCurrentCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver, THRUSTER_CURRENT_CMD)
+        BaseCoproCommand.__init__(self, driver, THRUSTER_CURRENT_CMD, replace_duplicates=True)
         self.thruster_current_pub = rospy.Publisher('state/thruster_currents', Float32MultiArray, queue_size=1)
         self.tasks.append(rospy.Timer(rospy.Duration(0.2), self.thruster_current_callback))
 
     def thruster_current_callback(self, event):
         if self.thruster_current_pub.get_num_connections() > 0:
-            self.driver.enqueueCommand(THRUSTER_CURRENT_CMD)
+            self.enqueueCommand()
 
     def commandCallback(self, response, extra_data):
         if len(response) == 1 and response[0] == 0:
@@ -343,13 +481,13 @@ class ThrusterCurrentCommand(BaseCoproCommand):
 
 class CoproMemoryCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver, MEMORY_CHECK_CMD)
+        BaseCoproCommand.__init__(self, driver, MEMORY_CHECK_CMD, replace_duplicates=True)
         self.memory_pub = rospy.Publisher('state/copro_memory_usage', Float32, queue_size=1)
         self.tasks.append(rospy.Timer(rospy.Duration(1.0), self.memory_callback))
 
     def memory_callback(self, event):
         if self.memory_pub.get_num_connections() > 0:
-            self.driver.enqueueCommand(MEMORY_CHECK_CMD)
+            self.enqueueCommand()
     
     def commandCallback(self, response, extra_data):
         if len(response) != 2:
@@ -361,7 +499,7 @@ class CoproMemoryCommand(BaseCoproCommand):
 
 class TempThresholdCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver, TEMP_THRESHOLD_CMD)
+        BaseCoproCommand.__init__(self, driver, TEMP_THRESHOLD_CMD, replace_duplicates=False)
         self.temp_threshold_pub = rospy.Publisher('state/temp_threshold', Int8, queue_size=1)
         self.tasks.append(rospy.Timer(rospy.Duration(1), self.temp_threshold_callback))
 
@@ -369,10 +507,10 @@ class TempThresholdCommand(BaseCoproCommand):
 
     def temp_threshold_callback(self, event):
         if self.temp_threshold_pub.get_num_connections() > 0:
-            self.driver.enqueueCommand(TEMP_THRESHOLD_CMD)
+            self.enqueueCommand()
 
     def set_temp_threshold_callback(self, msg):
-        self.driver.enqueueCommand(TEMP_THRESHOLD_CMD, [msg.data])
+        self.enqueueCommand([msg.data])
 
     def commandCallback(self, response, extra_data):
         if len(response) != 1:
@@ -384,7 +522,7 @@ class TempThresholdCommand(BaseCoproCommand):
 
 class LightingCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver, LIGHTING_POWER_CMD)
+        BaseCoproCommand.__init__(self, driver, LIGHTING_POWER_CMD, replace_duplicates=False)
 
         assert self.driver.current_robot == TITAN_ROBOT
 
@@ -396,14 +534,14 @@ class LightingCommand(BaseCoproCommand):
             rospy.logerr("Invalid range for lighting request: %d", msg.data)
         else:
             lighting_args = [1, msg.data]
-            self.driver.enqueueCommand(LIGHTING_POWER_CMD, args=lighting_args)
+            self.enqueueCommand(lighting_args)
 
     def light2_callback(self, msg):
         if msg.data < 0 or msg.data > 100:
             rospy.logerr("Invalid range for lighting request: %d", msg.data)
         else:
             lighting_args = [2, msg.data]
-            self.driver.enqueueCommand(LIGHTING_POWER_CMD, args=lighting_args)
+            self.enqueueCommand(lighting_args)
     
     def commandCallback(self, response, extra_data):
         if len(response) != 1:
@@ -418,14 +556,14 @@ class LightingCommand(BaseCoproCommand):
 
 class PeltierCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver, PELTIER_POWER_CMD)
+        BaseCoproCommand.__init__(self, driver, PELTIER_POWER_CMD, replace_duplicates=True)
 
         self.peltier_power_pub = rospy.Publisher('state/peltier_power', Bool, queue_size=1)
         self.tasks.append(rospy.Timer(rospy.Duration(1), self.peltier_callback))
 
     def peltier_callback(self, event):
         if self.peltier_power_pub.get_num_connections() > 0:
-            self.driver.enqueueCommand(PELTIER_POWER_CMD)
+            self.enqueueCommand()
     
     def commandCallback(self, response, extra_data):
         if len(response) != 1 or (response[0] != 0 and response[0] != 1):
@@ -436,14 +574,14 @@ class PeltierCommand(BaseCoproCommand):
 
 class CoproFaultCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver, GET_FAULT_STATE_CMD)
+        BaseCoproCommand.__init__(self, driver, GET_FAULT_STATE_CMD, replace_duplicates=True)
 
         self.copro_fault_pub = rospy.Publisher('state/copro_fault', UInt8MultiArray, queue_size=1)
         self.tasks.append(rospy.Timer(rospy.Duration(1), self.copro_fault_callback))
     
     def copro_fault_callback(self, event):
         if self.copro_fault_pub.get_num_connections() > 0:
-            self.driver.enqueueCommand(GET_FAULT_STATE_CMD)
+            self.enqueueCommand()
 
     def commandCallback(self, response, extra_data):
         if len(response) == 0:
@@ -458,7 +596,7 @@ class CoproFaultCommand(BaseCoproCommand):
 
 class LogicVoltageCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver, LOGIC_VOLTAGE_CMD)
+        BaseCoproCommand.__init__(self, driver, LOGIC_VOLTAGE_CMD, replace_duplicates=True)
 
         self.logic_12v_pub = rospy.Publisher('state/voltage_12', Float32, queue_size=1)
         self.logic_5v_pub = rospy.Publisher('state/voltage_5', Float32, queue_size=1)
@@ -466,7 +604,7 @@ class LogicVoltageCommand(BaseCoproCommand):
 
     def logic_voltage_callback(self, event):
         if self.logic_12v_pub.get_num_connections() > 0 or self.logic_5v_pub.get_num_connections() > 0:
-            self.driver.enqueueCommand(LOGIC_VOLTAGE_CMD)
+            self.enqueueCommand()
     
     def commandCallback(self, response, extra_data):
         if len(response) == 1 and response[0] == 0:
@@ -483,19 +621,19 @@ class LogicVoltageCommand(BaseCoproCommand):
 
 class ResetCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver, COPRO_RESET_CMD)
+        BaseCoproCommand.__init__(self, driver, COPRO_RESET_CMD, replace_duplicates=False, receives_response=False)
 
         rospy.Subscriber('control/copro_reset', Bool, self.reset_callback)
 
     def reset_callback(self, msg):
         if msg.data:
-            self.driver.enqueueCommand(COPRO_RESET_CMD, is_reset=True)
+            self.enqueueCommand()
 
 class ActuatorCommand(BaseCoproCommand):
     lastConfig = None
 
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver, ACTUATOR_CMD)
+        BaseCoproCommand.__init__(self, driver, ACTUATOR_CMD, replace_duplicates=False)
 
         rospy.Subscriber('command/drop', Int8, self.drop_callback)
         rospy.Subscriber('command/arm', Bool, self.arm_callback)
@@ -536,7 +674,7 @@ class ActuatorCommand(BaseCoproCommand):
         assert lower_bit_args < (1<<5)
         assert command < (1<<3)
         
-        self.driver.enqueueCommand(ACTUATOR_CMD, [(command << 5) + lower_bit_args] + remaining_args, extra_data=command)
+        self.enqueueCommand([(command << 5) + lower_bit_args] + remaining_args, extra_data=command)
 
     def reset_callback(self, msg):
         if msg.data:
@@ -607,7 +745,7 @@ class ActuatorCommand(BaseCoproCommand):
 
 class PingCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver, PING_COPRO_CMD)
+        BaseCoproCommand.__init__(self, driver, PING_COPRO_CMD, replace_duplicates=True)
 
         # Nothing needs to be published or subscribed to. Just to make sure the connection is still alive
 
@@ -615,7 +753,7 @@ class PingCommand(BaseCoproCommand):
         self.critical_tasks.append(rospy.Timer(rospy.Duration(0.4), self.ping_callback))
 
     def ping_callback(self, event):
-        self.driver.enqueueCommand(PING_COPRO_CMD)
+        self.enqueueCommand()
     
     def manual_ping(self):
         self.last_ping = time.time()
@@ -671,15 +809,17 @@ class CoproDriver:
         # Controls if enqueueCommand can enqueue data to the command_queue
         self.command_queueing_permitted = False
 
+        # The time of the last queue clear
+        self.last_queue_clear = time.time()
+
         # The command queue for communicating with copro
-        # This contains a full command_data packet:
-        # [packet_data (bytearray), command_id (None or int), extra_data (Any), sent_time (float)]
+        # This contains variables of type QueuedCommand
         self.command_queue = deque([], 50)
         ########################################
 
 
         ########################################
-        ### Note: These variables should only be interacted with by class methods, but not by enqueueCommand
+        ### Note: These variables should only be interacted with by class methods running on the copro driver thread
 
         # The socket connection to copro
         self.copro = None
@@ -700,8 +840,7 @@ class CoproDriver:
         self.connection_latency = -1
 
         # The response queue for holding data on packets being processed by the copro
-        # This contains a partial command_data packet:
-        # [command_id (None or int), extra_data (Any), sent_time (float)]
+        # This contains variables of type QueuedCommand
         self.response_queue = deque([], 50)
         ########################################
 
@@ -765,6 +904,7 @@ class CoproDriver:
 
         # Dump contents of the command queues
         self.command_queueing_permitted = False
+        self.last_queue_clear = time.time()
         self.command_queue.clear()
         self.response_queue.clear()
 
@@ -783,16 +923,16 @@ class CoproDriver:
                 while len(self.command_queue) != 0:
                     # Make sure there is enough space in the response queue to send another command
                     if len(self.response_queue) >= self.response_queue.maxlen:
-                        rospy.logwarn_throttle(5, "Receive Buffer Full")
+                        rospy.logwarn_throttle(5, "Copro commands dropped: Receive Buffer Full")
                         break
                     
                     # Get the data packet to send from the command data
-                    command_data = self.command_queue.popleft()
-                    command += command_data.pop(0)
+                    queued_command: QueuedCommand = self.command_queue.popleft()
+                    command += queued_command.update_sent()
 
                     # If response is expected, queue the cut command data
-                    if command_data[0] is not None:
-                        self.response_queue.append(command_data)
+                    if queued_command.receives_response:
+                        self.response_queue.append(queued_command)
                 if len(command) != 0:
                     self.copro.sendall(bytearray(command))
 
@@ -820,9 +960,8 @@ class CoproDriver:
                 response = self.buffer[1:self.buffer[0]]
 
                 # Retrieve the command id and time of request of this message
-                command_data = self.response_queue.popleft()
-                command = command_data[0]
-                command_latency = int((time.time() - command_data[2]) * 1000)
+                command: QueuedCommand = self.response_queue.popleft()
+                command_latency = int(command.update_received() * 1000)
 
                 # Recalculate connection latency with a weighted average
                 if self.connection_latency == -1:
@@ -833,13 +972,13 @@ class CoproDriver:
                 # The copro connection will return an empty packet if it failed to execute the command
                 # If this is the case, don't execute the callback, and instead log error
                 if len(response) == 0:
-                    rospy.logwarn("Command error on command "+str(command))
+                    rospy.logwarn("Command error on command "+str(command.command_id))
                 
                 # Execute command if callback available for it
-                elif command in self.registered_commands:
-                    self.registered_commands[command].commandCallback(response, command_data[1])
+                elif command.command_id in self.registered_commands:
+                    self.registered_commands[command.command_id].commandCallback(response, command.extra_data)
                 else:
-                    rospy.logerr("Unhandled Command Response from Copro: %d", command)
+                    rospy.logerr("Unhandled Command Response from Copro: %d", command.command_id)
 
                 # Remove the processed command from the receive buffer
                 self.buffer = self.buffer[self.buffer[0]:]
@@ -859,38 +998,18 @@ class CoproDriver:
     # Public Methods                       #
     ########################################
 
-    def enqueueCommand(self, command, args = [], is_reset = False, extra_data = None) -> bool:
+    def enqueueCommand(self, command: QueuedCommand) -> bool:
         """Adds command to queue to be sent to copro
 
         Args:
-            command (int): The command ID to be sent
-            args (list, optional): Int list of arguments to provide with command. Defaults to [].
-            is_reset (bool): True if command is for a reset command so a response won't be expected
-            extra_data (Any): Any extra data to be passed to the callback function
+            command (QueuedCommand): The command to be sent
 
         Returns:
             bool: If the command was successfully queued
         """
-            
-        # Command Pakcet Format
-        # Byte 0: Length (Including length byte)
-        # Byte 1: Command ID
-        # Byte 2-n: Args
-        data = [command] + args
-        data = [len(data) + 1] + data
-
-        # Make sure that there is enough space in the queue for the command
-        if len(self.command_queue) < self.command_queue.maxlen:
-            response_command = command
-            if is_reset:
-                # Resposne isn't expected during reset command
-                response_command = None
-            
-            # Check to make sure command queueing is permitted
-            if not self.command_queueing_permitted:
-                return False
-            
-            self.command_queue.append([data, response_command, extra_data, time.time()])
+        # Make sure that there is enough space in the queue for the command and commands can be queued
+        if len(self.command_queue) < self.command_queue.maxlen and self.command_queueing_permitted:            
+            self.command_queue.append(command)
             return True
         else:
             rospy.logwarn_throttle(5, "Copro commands dropped: Command Buffer Full")
@@ -968,6 +1087,7 @@ class CoproDriver:
                 self.pingCommander.manual_ping()
 
                 # Clear any data that entered the queue right after close, then enable queueing
+                self.last_queue_clear = time.time()
                 self.response_queue.clear()
                 self.command_queue.clear()
                 self.command_queueing_permitted = True
