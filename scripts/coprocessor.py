@@ -146,7 +146,7 @@ class QueuedCommand:
             bytes: The encoded command to be sent to the copro
         """
         assert packet_id > 0 and packet_id < 2**16, "Invalid Packet ID provided: {}".format(packet_id)
-        assert packet_id is None, "Command {}-{} already has a packet id assigned ({})".format(self.command_id, packet_id, self.packet_id)
+        assert self.packet_id is None, "Command {}-{} already has a packet id assigned ({})".format(self.command_id, packet_id, self.packet_id)
 
         # Store packet id
         self.packet_id = packet_id
@@ -596,7 +596,8 @@ class ActuatorCommand(BaseCoproCommand):
         rospy.Subscriber('command/grabber', Int8, self.grab_callback)
         rospy.Subscriber('control/actuator_reset', Bool, self.reset_callback)
 
-        if self.driver.current_robot == TEMPEST_ROBOT:
+#        if self.driver.current_robot == TEMPEST_ROBOT:
+        if self.driver.current_robot == 'NOT_ENABLED':
             self.actuator_connection_pub = rospy.Publisher('state/actuator', Bool, queue_size=1)
             self.actuator_connection_pub.publish(False)
             self.actuator_fault_pub = rospy.Publisher('state/actuator_fault', Bool, queue_size=1)
@@ -606,8 +607,8 @@ class ActuatorCommand(BaseCoproCommand):
             self.actuator_connection_pub = None
             self.actuator_fault_pub = None
 
-        if self.driver.current_robot == TEMPEST_ROBOT:
-            Server(CoprocessorDriverConfig, self.reconfigure_callback)
+#        if self.driver.current_robot == TEMPEST_ROBOT:
+#            Server(CoprocessorDriverConfig, self.reconfigure_callback)
 
     def reconfigure_callback(self, config, level):
         self.lastConfig = config
@@ -794,6 +795,10 @@ class CoproDriver:
         # The packet id to be used to identify response packets. Incremented and wraps around at 2**16. Should only be directly accessed by _get_packet_id
         self._packet_id = random.randint(1, 65535)
 
+        self.connecting_msg_sent = False
+
+        self.last_connect_ping = 0
+
         ########################################
 
     def _get_packet_id(self) -> int:
@@ -812,16 +817,24 @@ class CoproDriver:
             if self.connected:
                 rospy.logwarn("Trying to connect while already connected")
                 return
-            packet_id = self._get_packet_id()
-            self.copro.sendto(bytearray([5, GET_VERSION_CMD, packet_id >> 8, packet_id & 0xFF, 0]), (self.IP_ADDR, 50000))
 
-            r,_,_ = select.select([self.copro], [], [], self.TIMEOUT)
-            if self.copro in r:
+        packet_id = -1
+        if self.last_connect_ping + self.TIMEOUT < time.time():
+            packet_id = self._get_packet_id()
+            self.copro.sendto(bytearray([5, GET_VERSION_CMD, packet_id >> 8, packet_id & 0xFF, 0]), (self.IP_ADDR, 2354))
+            self.last_connect_ping = time.time()
+
+        r,_,_ = select.select([self.copro], [], [], self.TIMEOUT)
+        if self.copro in r:
+            with self.comm_lock:
                 # Crude reading code, doesn't need to be too robust since it's just for the hello packet
-                data = self.copro.recv(4096)
-                while len(data) > data[0]:
+                data = bytearray()
+                while len(select.select([self.copro],[],[],0)[0]) > 0:
+                    data += self.copro.recv(4096)
+                while len(data) > 0 and len(data) >= data[0]:
                     packet = data[:data[0]]
-                    if (len(packet) > 3) and (packet[1] == self.packet_id >> 8) and (self.packet_id & 0xFF):
+                    data = data[data[0]:]
+                    if len(packet) > 3 and packet[1] == (packet_id >> 8) and packet[2] == (packet_id & 0xFF):
                         protocol_version = packet[3:]
                         if protocol_version == CONN_EXPECTED_VERSION:
                             self.connected = True
@@ -843,11 +856,12 @@ class CoproDriver:
             self.outstanding_commands = {}
             self.connected = False
             self.connection_latency = -1
-            self.buffer = []
 
     def doCoproCommunication(self) -> None:
         """Processes any data returned from the copro
         """
+
+        buffer = []
 
         with self.comm_lock:
             readable, _, _ = select.select([self.copro], [], [], 0)
@@ -858,22 +872,22 @@ class CoproDriver:
                 try:
                     while True:
                         recv_data = self.copro.recv(64)
-                        self.buffer += recv_data
+                        buffer += recv_data
                 except BlockingIOError:
                     pass
-            
+
         # Continue processing buffer until the buffer doesn't containe the
         # whole the length (first byte) of the packet or the buffer is empty
-        while len(self.buffer) >= 3 and self.buffer[0] <= len(self.buffer):
+        while len(buffer) >= 3 and buffer[0] <= len(buffer):
             # Decode packet - The first byte is length, remaining is data
-            packet_id = (self.buffer[1] << 8) + self.buffer[2]
-            response_data = self.buffer[3:self.buffer[0]]
+            packet_id = (buffer[1] << 8) + buffer[2]
+            response_data = buffer[3:buffer[0]]
 
             if packet_id in self.outstanding_commands:
                 command = self.outstanding_commands.pop(packet_id)
             
                 # Retrieve the command id and time of request of this message
-                command_latency = int(command.update_received() * 1000)
+                command_latency = int(command.get_elapsed() * 1000)
 
                 # Recalculate connection latency with a weighted average
                 if self.connection_latency == -1:
@@ -895,12 +909,21 @@ class CoproDriver:
                 rospy.logwarn("Unexpected packet with id %d received", packet_id)
 
             # Remove the processed command from the receive buffer
-            self.buffer = self.buffer[self.buffer[0]:]
+            buffer = buffer[buffer[0]:]
         
-        for packet_id in self.outstanding_commands:
-            if self.outstanding_commands[packet_id].get_elapsed() > self.TIMEOUT:
-                cmd = self.outstanding_commands.pop(packet_id)
-                rospy.logwarn("Dropping unreceived packet %d (cmd: %d)", cmd.packet_id, cmd.command_id)
+        if len(buffer) > 0:
+            rospy.logwarn("Data fragments in command buffer, maybe corrupted buffer?")
+
+        with self.comm_lock:
+            packets_to_remove = []
+            for packet_id in self.outstanding_commands:
+                if self.outstanding_commands[packet_id].get_elapsed() > self.TIMEOUT:
+                    packets_to_remove.append(packet_id)
+                    cmd = self.outstanding_commands[packet_id]
+                    rospy.logwarn("Dropping unreceived packet %d (cmd: %d)", cmd.packet_id, cmd.command_id)
+            
+            for packet_id in packets_to_remove:
+                del self.outstanding_commands[packet_id]
 
         # Publish the connection latency and rx pending queue length
         self.connection_rx_pending_queue_len_pub.publish(len(self.outstanding_commands))
@@ -929,7 +952,7 @@ class CoproDriver:
         with self.comm_lock:
             if self.connected:
                 raw_data = command.generate_packet(self._get_packet_id())
-                self.copro.sendto(raw_data, (self.IP_ADDR, 50000))
+                self.copro.sendto(raw_data, (self.IP_ADDR, 2354))
 
                 assert command.packet_id not in self.outstanding_commands
                 self.outstanding_commands[command.packet_id] = command
