@@ -53,10 +53,10 @@ import yaml
 
 # Robot Types
 PUDDLES_ROBOT = "puddles"
-TITAN_ROBOT = "titan"
+TEMPEST_ROBOT = "tempest"
 
 # Copro Commands
-CONN_HELLO_MESSAGE = b"\010UWRT_Hi"
+CONN_EXPECTED_VERSION = b"COPRO-2.0"
 CONN_LATENCY_NEW_WEIGHT = 0.02
 
 MOBO_POWER_CMD = 0
@@ -67,7 +67,7 @@ BATTERY_VOLTAGE_CMD = 4     # Implemented
 BATTERY_CURRENT_CMD = 5     # Implemented
 TEMPERATURE_CMD = 6         # Implemented
 THRUSTER_FORCE_CMD = 7      # Implemented
-LOGIC_CURRENT_CMD = 8           # Note: Not implemented on Titan Copro
+LOGIC_CURRENT_CMD = 8           # Note: Not implemented on Tempest Copro
 LOGIC_VOLTAGE_CMD = 9       # Implemented
 GET_SWITCHES_CMD = 10       # Implemented
 GET_DEPTH_CMD = 11          # Implemented
@@ -76,15 +76,17 @@ TWELVE_VOLT_POWER_CMD = 13
 FIVE_VOLT_RESET_CMD = 14
 COPRO_RESET_CMD = 15        # Implemented
 ACTUATOR_CMD = 16           # Implemented
-PING_COPRO_CMD = 17         # Implemented
+PING_COPRO_CMD = 17
 MEMORY_CHECK_CMD = 18       # Implemented
 TEMP_THRESHOLD_CMD = 19     # Implemented
 GET_FAULT_STATE_CMD = 20    # Implemented
+GET_VERSION_CMD = 21        # Implemented
+SAFETY_KEEPALIVE_CMD = 22   # Implemented
 
 # Actuator Commands
 ACTUATOR_SET_TORPEDO_TIMING_CMD = 0     # Implemented
 ACTUATOR_RESET_BOARD_CMD = 1            # Implemented
-ACTUATOR_GET_FAULT_STATUS_CMD = 2       # Implemented - Note: Only implemented on titan
+ACTUATOR_GET_FAULT_STATUS_CMD = 2       # Implemented - Note: Only implemented on tempest
 ACTUATOR_GET_TORPEDO_STATUS_CMD = 3
 ACTUATOR_ARM_TORPEDO_CMD = 4            # Implemented
 ACUTATOR_FIRE_TORPEDO_CMD = 5           # Implemented
@@ -477,7 +479,7 @@ class LightingCommand(BaseCoproCommand):
     def __init__(self, driver):
         BaseCoproCommand.__init__(self, driver, LIGHTING_POWER_CMD)
 
-        assert self.driver.current_robot == TITAN_ROBOT
+        assert self.driver.current_robot == TEMPEST_ROBOT
 
         rospy.Subscriber('command/light1', Int8, self.light1_callback)
         rospy.Subscriber('command/light2', Int8, self.light2_callback)
@@ -594,7 +596,7 @@ class ActuatorCommand(BaseCoproCommand):
         rospy.Subscriber('command/grabber', Int8, self.grab_callback)
         rospy.Subscriber('control/actuator_reset', Bool, self.reset_callback)
 
-        if self.driver.current_robot == TITAN_ROBOT:
+        if self.driver.current_robot == TEMPEST_ROBOT:
             self.actuator_connection_pub = rospy.Publisher('state/actuator', Bool, queue_size=1)
             self.actuator_connection_pub.publish(False)
             self.actuator_fault_pub = rospy.Publisher('state/actuator_fault', Bool, queue_size=1)
@@ -604,7 +606,7 @@ class ActuatorCommand(BaseCoproCommand):
             self.actuator_connection_pub = None
             self.actuator_fault_pub = None
 
-        if self.driver.current_robot == TITAN_ROBOT:
+        if self.driver.current_robot == TEMPEST_ROBOT:
             Server(CoprocessorDriverConfig, self.reconfigure_callback)
 
     def reconfigure_callback(self, config, level):
@@ -666,7 +668,7 @@ class ActuatorCommand(BaseCoproCommand):
     def commandCallback(self, response, extra_data):
         command = extra_data
 
-        if self.driver.current_robot == TITAN_ROBOT:
+        if self.driver.current_robot == TEMPEST_ROBOT:
             if len(response) != 2:
                 rospy.logerr("Invalid response for actuator command %d: " + str(response), command)
                 return
@@ -696,24 +698,28 @@ class ActuatorCommand(BaseCoproCommand):
                 self.actuator_fault_pub.publish(bool(response[0]))
 
 
-class PingCommand(BaseCoproCommand):
+class SafetyKeepaliveCommand(BaseCoproCommand):
     def __init__(self, driver):
-        BaseCoproCommand.__init__(self, driver, PING_COPRO_CMD)
+        BaseCoproCommand.__init__(self, driver, SAFETY_KEEPALIVE_CMD)
 
         # Nothing needs to be published or subscribed to. Just to make sure the connection is still alive
 
         self.last_ping = time.time()
-        self.critical_tasks.append(rospy.Timer(rospy.Duration(0.4), self.ping_callback))
+        self.critical_tasks.append(rospy.Timer(rospy.Duration(0.05), self.keepalive_callback))
 
-    def ping_callback(self, event):
-        self.enqueueCommand()
+    def keepalive_callback(self, event):
+        self.enqueueCommand([1])
+    
+    def invalidate_keepalive(self):
+        self.enqueueCommand([0])
     
     def manual_ping(self):
         self.last_ping = time.time()
+        self.enqueueCommand([1])
 
     def commandCallback(self, response, extra_data):
         if len(response) != 1 and response[0] != 1:
-            rospy.logerr("Invalid ping response: " + str(response))
+            rospy.logerr("Invalid keepalive response: " + str(response))
         else:
             self.last_ping = time.time()
 
@@ -734,7 +740,6 @@ class CoproDriver:
     # The ros publishers for the copro connection state
     connection_pub: rospy.Publisher
     connection_latency_pub: rospy.Publisher
-    connection_tx_queue_len_pub: rospy.Publisher
     connection_rx_pending_queue_len_pub: rospy.Publisher
 
     # The timer scheduling the copro communication task
@@ -744,8 +749,8 @@ class CoproDriver:
     current_robot = None
 
     # Commands with specific features used directly in the copro driver
-    actuatorCommander: ActuatorCommand  # The instance of ActuatorCommand (used for actuator callback configuration)
-    pingCommander: PingCommand          # The instance of PingCommand (used for timeouts and controlling safeties)
+    actuatorCommander: ActuatorCommand          # The instance of ActuatorCommand (used for actuator callback configuration)
+    keepaliveCommander: SafetyKeepaliveCommand  # The instance of SafetyKeepaliveCommand (used for timeouts and controlling safeties)
 
     def __init__(self):
         """Initializes new instance of CoproDriver class
@@ -770,8 +775,6 @@ class CoproDriver:
         # Should only written by copro driver thread
         self.connected = False
 
-        # The packet id to be used to identify response packets. Incremented and wraps around at 2**16
-        self.packet_id = random.randint(1, 65535)
         ########################################
  
 
@@ -780,7 +783,7 @@ class CoproDriver:
 
         # Outstanding Commands Dict
         # Has keys with the packet id and the value of the corresponding QueuedCommand
-        self.outstanding_commands = {}
+        self.outstanding_commands: 'Dict[int, QueuedCommand]' = {}
 
         # If the copro communication task should shut down
         self.comm_should_shutdown = False
@@ -788,125 +791,88 @@ class CoproDriver:
         # Connection latency (ms)
         self.connection_latency = -1
 
+        # The packet id to be used to identify response packets. Incremented and wraps around at 2**16. Should only be directly accessed by _get_packet_id
+        self._packet_id = random.randint(1, 65535)
+
         ########################################
 
+    def _get_packet_id(self) -> int:
+        packet_id = self._packet_id
+        self._packet_id += 1
+        if self._packet_id > 65535:
+            self._packet_id = 1
+        return packet_id
 
     ########################################
     # Connection Management Code           #
     ########################################
 
     def tryConnect(self) -> None:
-        try:
-            # Try Connect
-            self.copro = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.copro.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            self.copro.settimeout(self.TIMEOUT)
-            self.copro.connect((self.IP_ADDR, 50000))
+        with self.comm_lock:
+            if self.connected:
+                rospy.logwarn("Trying to connect while already connected")
+                return
+            packet_id = self._get_packet_id()
+            self.copro.sendto(bytearray([5, GET_VERSION_CMD, packet_id >> 8, packet_id & 0xFF, 0]), (self.IP_ADDR, 50000))
 
-            # Exchange Hello
-            self.copro.settimeout(10)
-            self.copro.sendall(CONN_HELLO_MESSAGE)
-            data = self.copro.recv(8)
-            assert data == CONN_HELLO_MESSAGE
-
-            self.copro.settimeout(self.TIMEOUT)
-            self.copro.setblocking(False)
-
-            self.connected = True
-        except:
-            # Close down the connection properly for all states of connect
-            self.closeConnection()
-
+            r,_,_ = select.select([self.copro], [], [], self.TIMEOUT)
+            if self.copro in r:
+                # Crude reading code, doesn't need to be too robust since it's just for the hello packet
+                data = self.copro.recv(4096)
+                while len(data) > data[0]:
+                    packet = data[:data[0]]
+                    if (len(packet) > 3) and (packet[1] == self.packet_id >> 8) and (self.packet_id & 0xFF):
+                        protocol_version = packet[3:]
+                        if protocol_version == CONN_EXPECTED_VERSION:
+                            self.connected = True
+                            break
+                        else:
+                            rospy.logwarn_once("Unexpected Copro Protocol Version: "+str(protocol_version))
+                    
     def closeConnection(self) -> None:
         """Closes the connection to the copro
         Should only be called from copro comm task
 
         """
 
-        # If the socket is still active, clean it up
-        if self.copro is not None:
-            try:
-                if self.connected:
-                    # Stop thrusters
-                    rospy.loginfo("Stopping thrusters")
-                    self.copro.setblocking(False)
-                    try:
-                        # Try a clean disconnect
-                        self.copro.sendall(self.pwmCommander.stopThrustersCommand())
-                        self.copro.sendall(bytearray([0]))
-                        self.copro.shutdown(socket.SHUT_RDWR)
-                    except:
-                        pass
-                self.copro.close()
-            except Exception as e:
-                traceback.print_exc()
-                rospy.logerr("Error during connection close: " + str(e))
+        # Try to send invalidate_keepalive
+        self.keepaliveCommander.invalidate_keepalive()
         
         # Reset connection instance variables
-        self.copro = None
-        self.connected = False
-        self.connection_latency = -1
-        self.buffer = []
-
-        # Dump contents of the command queues
-        self.command_queueing_permitted = False
-        self.last_queue_clear = time.time()
-        self.command_queue.clear()
-        self.response_queue.clear()
+        with self.comm_lock:
+            self.outstanding_commands = {}
+            self.connected = False
+            self.connection_latency = -1
+            self.buffer = []
 
     def doCoproCommunication(self) -> None:
-        """Sends any pending commands to copro and processes any data returned
+        """Processes any data returned from the copro
         """
-        # Publish the number of commands in queue before they are handled
-        self.connection_tx_queue_len_pub.publish(len(self.command_queue))
 
-        readable, writable, _ = select.select([self.copro], [self.copro], [], 0)
+        with self.comm_lock:
+            readable, _, _ = select.select([self.copro], [], [], 0)
 
-        # Handle outgoing packets if there is room in send buffer
-        if len(writable) > 0:
-            if len(self.command_queue) > 0:
-                command = []
-                while len(self.command_queue) != 0:
-                    # Make sure there is enough space in the response queue to send another command
-                    if len(self.response_queue) >= self.response_queue.maxlen:
-                        rospy.logwarn_throttle(5, "Copro commands dropped: Receive Buffer Full")
-                        break
-                    
-                    # Get the data packet to send from the command data
-                    queued_command: QueuedCommand = self.command_queue.popleft()
-                    command += queued_command.update_sent()
-
-                    # If response is expected, queue the cut command data
-                    if queued_command.receives_response:
-                        self.response_queue.append(queued_command)
-                if len(command) != 0:
-                    self.copro.sendall(bytearray(command))
-
-        # Handle incoming packets if there is data in receive buffer
-        if len(readable) > 0:
-            # Receive all data until the connection blocks
-            try:
-                self.copro.setblocking(False)
-                while True:
-                    recv_data = self.copro.recv(64)
-
-                    # Length of zero from recv means EOF, so socket was shutdown
-                    if len(recv_data) == 0:
-                        self.closeConnection()
-                        break
-
-                    self.buffer += recv_data
-            except socket.error:
-                pass
+            # Handle incoming packets if there is data in receive buffer
+            if len(readable) > 0:
+                # Receive all data until the connection blocks
+                try:
+                    while True:
+                        recv_data = self.copro.recv(64)
+                        self.buffer += recv_data
+                except BlockingIOError:
+                    pass
             
-            # Continue processing buffer until the buffer doesn't containe the
-            # whole the length (first byte) of the packet or the buffer is empty
-            while len(self.buffer) > 0 and self.buffer[0] <= len(self.buffer):
-                # Decode packet - The first byte is length, remaining is data
-                response = self.buffer[1:self.buffer[0]]
+        # Continue processing buffer until the buffer doesn't containe the
+        # whole the length (first byte) of the packet or the buffer is empty
+        while len(self.buffer) >= 3 and self.buffer[0] <= len(self.buffer):
+            # Decode packet - The first byte is length, remaining is data
+            packet_id = (self.buffer[1] << 8) + self.buffer[2]
+            response_data = self.buffer[3:self.buffer[0]]
 
+            if packet_id in self.outstanding_commands:
+                command = self.outstanding_commands.pop(packet_id)
+            
                 # Retrieve the command id and time of request of this message
-                command: QueuedCommand = self.response_queue.popleft()
                 command_latency = int(command.update_received() * 1000)
 
                 # Recalculate connection latency with a weighted average
@@ -917,25 +883,32 @@ class CoproDriver:
 
                 # The copro connection will return an empty packet if it failed to execute the command
                 # If this is the case, don't execute the callback, and instead log error
-                if len(response) == 0:
+                if len(response_data) == 0:
                     rospy.logwarn("Command error on command "+str(command.command_id))
                 
                 # Execute command if callback available for it
                 elif command.command_id in self.registered_commands:
-                    self.registered_commands[command.command_id].commandCallback(response, command.extra_data)
+                    self.registered_commands[command.command_id].commandCallback(response_data, command.extra_data)
                 else:
                     rospy.logerr("Unhandled Command Response from Copro: %d", command.command_id)
+            else:
+                rospy.logwarn("Unexpected packet with id %d received", packet_id)
 
-                # Remove the processed command from the receive buffer
-                self.buffer = self.buffer[self.buffer[0]:]
+            # Remove the processed command from the receive buffer
+            self.buffer = self.buffer[self.buffer[0]:]
         
+        for packet_id in self.outstanding_commands:
+            if self.outstanding_commands[packet_id].get_elapsed() > self.TIMEOUT:
+                cmd = self.outstanding_commands.pop(packet_id)
+                rospy.logwarn("Dropping unreceived packet %d (cmd: %d)", cmd.packet_id, cmd.command_id)
+
         # Publish the connection latency and rx pending queue length
-        self.connection_rx_pending_queue_len_pub.publish(len(self.response_queue))
+        self.connection_rx_pending_queue_len_pub.publish(len(self.outstanding_commands))
         if self.connection_latency != -1:
             self.connection_latency_pub.publish(self.connection_latency)
 
         # Check for stalls using ping command data
-        if time.time() - self.pingCommander.last_ping > self.TIMEOUT:
+        if time.time() - self.keepaliveCommander.last_ping > self.TIMEOUT:
             rospy.logwarn("Copro Connection Timed Out... Dropping Connection")
             self.closeConnection()
 
@@ -953,13 +926,17 @@ class CoproDriver:
         Returns:
             bool: If the command was successfully queued
         """
-        # Make sure that there is enough space in the queue for the command and commands can be queued
-        if len(self.command_queue) < self.command_queue.maxlen and self.command_queueing_permitted:            
-            self.command_queue.append(command)
-            return True
-        else:
-            rospy.logwarn_throttle(5, "Copro commands dropped: Command Buffer Full")
-            return False
+        with self.comm_lock:
+            if self.connected:
+                raw_data = command.generate_packet(self._get_packet_id())
+                self.copro.sendto(raw_data, (self.IP_ADDR, 50000))
+
+                assert command.packet_id not in self.outstanding_commands
+                self.outstanding_commands[command.packet_id] = command
+
+                return True
+            else:
+                return False
 
     def registerCommand(self, receiver: BaseCoproCommand) -> None:
         """Registers a receiver to process a command
@@ -1029,14 +1006,7 @@ class CoproDriver:
                 self.connecting_msg_sent = False
 
                 rospy.loginfo("Connected to copro!")
-                self.buffer = []
-                self.pingCommander.manual_ping()
-
-                # Clear any data that entered the queue right after close, then enable queueing
-                self.last_queue_clear = time.time()
-                self.response_queue.clear()
-                self.command_queue.clear()
-                self.command_queueing_permitted = True
+                self.keepaliveCommander.manual_ping()
                 
                 # Send the actuator configuration data
                 if self.actuatorCommander.lastConfig is not None:
@@ -1071,14 +1041,13 @@ class CoproDriver:
 
         if self.current_robot == PUDDLES_ROBOT:
             self.IP_ADDR = '192.168.1.42'
-        elif self.current_robot == TITAN_ROBOT:
+        elif self.current_robot == TEMPEST_ROBOT:
             self.IP_ADDR = '192.168.1.43'
         else:
             raise RuntimeError("Invalid Robot Specified")
 
         self.connection_pub = rospy.Publisher('state/copro', Bool, queue_size=1)
         self.connection_latency_pub = rospy.Publisher('state/copro/latency', UInt16, queue_size=1)
-        self.connection_tx_queue_len_pub = rospy.Publisher('state/copro/tx_len', Int8, queue_size=1)
         self.connection_rx_pending_queue_len_pub = rospy.Publisher('state/copro/rx_pending_len', Int8, queue_size=1)
         
         # Implement command loading here
@@ -1095,10 +1064,10 @@ class CoproDriver:
         CoproFaultCommand(self)
         LogicVoltageCommand(self)
         ResetCommand(self)
-        if self.current_robot == TITAN_ROBOT:
+        if self.current_robot == TEMPEST_ROBOT:
             LightingCommand(self)
         self.actuatorCommander = ActuatorCommand(self)
-        self.pingCommander = PingCommand(self)
+        self.keepaliveCommander = SafetyKeepaliveCommand(self)
 
         # set up clean shutdown
         rospy.on_shutdown(self.onShutdown)
