@@ -28,7 +28,7 @@ ERROR_DESCRIPTIONS = [
     "FAULT_STATE_INVALID",           # 10
     "BATT_LOW",                      # 11
     "WATCHDOG_RESET",                # 12
-    "CONV_BOARD_INIT_FAIL",          # 13
+    "UNEXPECTED_NETWORK_ERROR",      # 13
     "THRUSTER_SAFETY_MONITOR_CRASH", # 14
     "DEVICE_BOOTING",                # 15
 ]
@@ -229,14 +229,14 @@ class KillSwitchTask(DiagnosticTask):
         rospy.Subscriber('state/kill_switch', Bool, self.kill_switch_callback, queue_size=1)
 
     def kill_switch_callback(self, msg):
-        self._switch_engaged.update_value(msg)
+        self._switch_engaged.update_value(bool(msg.data))
 
     def run(self, stat):
         switch_engaged = self._switch_engaged.get_value()
 
         if switch_engaged is None:
             stat.summary(DiagnosticStatus.STALE, "No data available from copro publisher")
-        elif switch_engaged is True:
+        elif switch_engaged:
             stat.summary(DiagnosticStatus.OK, "Engaged")
         else:
             stat.summary(DiagnosticStatus.OK, "Disengaged")

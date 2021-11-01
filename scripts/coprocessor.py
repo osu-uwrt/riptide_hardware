@@ -303,8 +303,8 @@ class DepthCommand(BaseCoproCommand):
         else:
             if response[0] == 1:
                 depth = (response[1] << 16) + (response[2] << 8) + response[3]
-                if response[1] & 0x80 != 0:
-                    depth = -1 * ((1<<24) - depth)
+                if depth > (1<<23):
+                    depth = -1 * (((1<<23) - depth))
                 depth = depth / 100000.0
                 depth_msg = Depth()
                 depth_msg.header.stamp = rospy.Time.now()
