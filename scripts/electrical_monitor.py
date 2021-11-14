@@ -16,19 +16,21 @@ ROS_MESSAGE_LIFETIME = 3
 
 ERROR_DESCRIPTIONS = [
     "Undefined",
-    "PROGRAM_TERMINATED",       # 1
-    "MAIN_LOOP_CRASH",          # 2
-    "DEPTH_LOOP_CRASH",         # 3
-    "BATTERY_CHECKER_CRASH",    # 4
-    "AUTO_COOLING_CRASH",       # 5
-    "BB_INIT_FAIL",             # 6
-    "ESC_INIT_FAIL",            # 7
-    "DEPTH_INIT_FAIL",          # 8
-    "BACKPLANE_INIT_FAIL",      # 9
-    "FAULT_STATE_INVALID",      # 10
-    "BATT_LOW",                 # 11
-    "WATCHDOG_RESET",           # 12
-    "CONV_BOARD_INIT_FAIL",     # 13
+    "PROGRAM_TERMINATED",            # 1
+    "MAIN_LOOP_CRASH",               # 2
+    "DEPTH_LOOP_CRASH",              # 3
+    "BATTERY_CHECKER_CRASH",         # 4
+    "AUTO_COOLING_CRASH",            # 5
+    "BB_INIT_FAIL",                  # 6
+    "ESC_INIT_FAIL",                 # 7
+    "DEPTH_INIT_FAIL",               # 8
+    "BACKPLANE_INIT_FAIL",           # 9
+    "FAULT_STATE_INVALID",           # 10
+    "BATT_LOW",                      # 11
+    "WATCHDOG_RESET",                # 12
+    "UNEXPECTED_NETWORK_ERROR",      # 13
+    "THRUSTER_SAFETY_MONITOR_CRASH", # 14
+    "DEVICE_BOOTING",                # 15
 ]
 
 COMMAND_DESCRIPTIONS = [
@@ -53,6 +55,8 @@ COMMAND_DESCRIPTIONS = [
     "MEMORY_CHECK",         #18 
     "TEMP_THRESHOLD",       #19 
     "GET_FAULT_STATE",	    #20
+    "GET_VERSION_CMD",      #21
+    "SAFETY_KEEPALIVE_CMD", #22
 ]
 
 COMMAND_EXEC_CRASH_FLAG = (1<<7)
@@ -225,7 +229,7 @@ class KillSwitchTask(DiagnosticTask):
         rospy.Subscriber('state/kill_switch', Bool, self.kill_switch_callback, queue_size=1)
 
     def kill_switch_callback(self, msg):
-        self._switch_engaged.update_value(msg)
+        self._switch_engaged.update_value(bool(msg.data))
 
     def run(self, stat):
         switch_engaged = self._switch_engaged.get_value()
