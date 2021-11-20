@@ -72,6 +72,32 @@ class CoreTempTask(DiagnosticTask):
     def has_hardware():
         return "coretemp" in psutil.sensors_temperatures()
 
+class ComputerTempTask(DiagnosticTask):
+    def __init__(self, warning_percentage, error_temp):
+        DiagnosticTask.__init__(self, "Computer Temperature")
+        self._warning_percentage = int(warning_percentage)
+        self._error_temp = error_temp
+
+    def run(self, stat):
+        computer_temp = psutil.sensors_temperatures()["thermal-fan-est"].current
+
+        error = computer_temp > self._error_temp
+        warn = computer_temp > (self._error_temp * self._warning_percentage / 100.0)
+
+        if error:
+            stat.summary(DiagnosticStatus.ERROR,
+                         "Core temp exceeds {:.2f} C".format(computer_temp))
+        elif warn:
+            stat.summary(DiagnosticStatus.WARN,
+                         "Core temp exceeds {:.2f} C".format(computer_temp))
+        else:
+            stat.summary(DiagnosticStatus.OK, "Computer temp {:.2f} C".format(computer_temp))
+
+        return stat
+
+    @staticmethod
+    def has_hardware():
+        return "thermal-fan-est" in psutil.sensors_temperatures()
 
 class MemoryTask(DiagnosticTask):
     def __init__(self, warning_percentage):
@@ -184,6 +210,8 @@ def main():
     updater.add(CpuTask(rospy.get_param("~cpu_warning_percentage", 90)))
     updater.add(MemoryTask(rospy.get_param("~memory_warning_percentage", 90)))
     updater.add(DiskTask(rospy.get_param("~disk_warning_percentage", 90)))
+    if ComputerTempTask.has_hardware():
+        updater.add(ComputerTempTask(rospy.get_param("!temp_warning_percentage", 90), 50))
     if CoreTempTask.has_hardware():
         updater.add(CoreTempTask(rospy.get_param("~temp_warning_percentage", 90)))
     if GPUTask.has_hardware():
