@@ -79,7 +79,7 @@ class ComputerTempTask(DiagnosticTask):
         self._error_temp = error_temp
 
     def run(self, stat):
-        computer_temp = psutil.sensors_temperatures()["thermal-fan-est"].current
+        computer_temp = psutil.sensors_temperatures()["thermal-fan-est"][0].current
 
         error = computer_temp > self._error_temp
         warn = computer_temp > (self._error_temp * self._warning_percentage / 100.0)
