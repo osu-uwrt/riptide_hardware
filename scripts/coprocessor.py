@@ -7,6 +7,7 @@ Subscribers:
 'control/temp_threshold' (Int8): Sets the temperature threshold (in Deg C) before the peltier turns on
 'control/copro_reset' (Bool): Resets the Copro MCU when published with True
 'control/actuator_reset' (Bool): Resets the Actuator MCU when published with True
+'control/software_kill' (Bool): Sets software kill state
 'command/pwm' (Int16MultiArray): 8 PWM Values (in microseconds) for each of the thrusters
 'command/light1' (Int8): Sets the light 1 brightness (In Percent)
 'command/light2' (Int8): Sets the light 2 brightness (In Percent)
@@ -250,9 +251,13 @@ def toBytes(num: int) -> List[int]:
 ########################################
 
 class PwmCommand(BaseCoproCommand):
+    software_killed = False
+    pwm_publish_lock = threading.Lock()
+
     def __init__(self, driver):
         BaseCoproCommand.__init__(self, driver, THRUSTER_FORCE_CMD)
         rospy.Subscriber('command/pwm', Int16MultiArray, self.pwm_callback, queue_size=1)
+        rospy.Subscriber('control/software_kill', Bool, self.software_kill_callback, queue_size=1)
 
     def pwm_callback(self, pwm_message):
         args = []
@@ -264,7 +269,14 @@ class PwmCommand(BaseCoproCommand):
         args += toBytes(pwm_message.data[5])
         args += toBytes(pwm_message.data[6])
         args += toBytes(pwm_message.data[7])
-        self.enqueueCommand(args)
+        with self.pwm_publish_lock:
+            if not self.software_killed:
+                self.enqueueCommand(args, {"failure_okay": False})
+
+    def software_kill_callback(self, message):
+        with self.pwm_publish_lock:
+            self.software_killed = message.data
+            self.enqueueCommand([5, 220] * 8, {"failure_okay": True})
 
     def stopThrustersCommand(self):
         # This the command that will put the thrusters into a stopped state
@@ -274,7 +286,8 @@ class PwmCommand(BaseCoproCommand):
         if len(response) != 1:
             rospy.logerr("Invalid thruster force response of length %d", len(response))
         elif response[0] == 0:
-            rospy.logwarn("Thruster command failed to run!")
+            if not extra_data["failure_okay"]:
+                rospy.logwarn("Thruster command failed to run!")
         elif response[0] == 1:
             pass  # Thrusters command successfully executed
         else:
@@ -403,6 +416,8 @@ class SwitchCommand(BaseCoproCommand):
             rospy.logerr("Improper switches response: " + str(response))
         else:
             kill_state = bool(response[0] & (1 << 0))
+            if self.driver.pwmCommander.software_killed:
+                kill_state = False
             self.kill_switch_pub.publish(kill_state)
             self.aux_switch_pub.publish(bool(response[0] & (1 << 1)))
 
