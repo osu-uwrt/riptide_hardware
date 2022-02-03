@@ -9,12 +9,6 @@ import diagnostic_updater
 from riptide_msgs2.msg import ElectricalReadings
 from diagnostic_msgs.msg import DiagnosticStatus
 
-# Robot Types
-PUDDLES_ROBOT = "puddles"
-TEMPEST_ROBOT = "tempest"
-
-ROS_MESSAGE_LIFETIME = 3
-
 class ExpiringMessage:
     def __init__(self, message_life):
         self._value = None
@@ -44,21 +38,25 @@ class BatteryVoltageTask(diagnostic_updater.DiagnosticTask):
     def run(self, stat):
         electrical_reading = self._electrical_readings_msg.get_value()
         
-        if electrical_reading is not None:
-            port_voltage = electrical_reading.port_voltage
-            stbd_voltage = electrical_reading.stbd_voltage
+        if electrical_reading is None:
+            stat.summary(DiagnosticStatus.STALE, "No data available from copro")
+            return stat
 
-        if electrical_reading is None or port_voltage == ElectricalReadings.NO_READING or stbd_voltage == ElectricalReadings.NO_READING:
-            stat.summary(DiagnosticStatus.STALE, "No data available from copro publisher")
+        port_voltage = electrical_reading.port_voltage
+        stbd_voltage = electrical_reading.stbd_voltage
+        
+        stat.add("Port Battery", "{:.2f}V".format(port_voltage))
+        stat.add("Starboard Battery", "{:.2f}V".format(stbd_voltage))
+        stat.add("Thruster Shutoff Voltage", "{}V".format(self._error_voltage))
+
+        if port_voltage == ElectricalReadings.NO_READING or stbd_voltage == ElectricalReadings.NO_READING:
+            stat.summary(DiagnosticStatus.STALE, "Unable to read battery voltages")
         else:
             difference_note = ""
             batt_low_note = ""
             if abs(stbd_voltage - port_voltage) >= self._warning_voltage_diff:
                 difference_note = " [Voltage difference above nominal value of {}V]".format(self._warning_voltage_diff)
                 batt_low_note = "[LARGE VDIF] "
-            stat.add("Port Battery", "{:.2f}V".format(port_voltage))
-            stat.add("Starboard Battery", "{:.2f}V".format(stbd_voltage))
-            stat.add("Thruster Shutoff Voltage", "{}V".format(self._error_voltage))
             stat.add("Starboard-Port Voltage Difference", "{:.2f}V".format(abs(stbd_voltage-port_voltage)) + difference_note)
 
             if port_voltage <= self._error_voltage or stbd_voltage <= self._error_voltage:
@@ -100,16 +98,19 @@ class BatteryCurrentTask(diagnostic_updater.DiagnosticTask):
     def run(self, stat):
         electrical_reading = self._electrical_readings_msg.get_value()
         
-        if electrical_reading is not None:
-            port_current = electrical_reading.port_current
-            stbd_current = electrical_reading.stbd_current
+        if electrical_reading is None:
+            stat.summary(DiagnosticStatus.STALE, "No data available from copro")
+            return stat
+        
+        port_current = electrical_reading.port_current
+        stbd_current = electrical_reading.stbd_current
+        
+        stat.add("Port Battery", "{:.2f}A".format(port_current))
+        stat.add("Starboard Battery", "{:.2f}A".format(stbd_current))
 
-        if electrical_reading is None or port_current == ElectricalReadings.NO_READING or stbd_current == ElectricalReadings.NO_READING:
-            stat.summary(DiagnosticStatus.STALE, "No data available from copro publisher")
+        if port_current == ElectricalReadings.NO_READING or stbd_current == ElectricalReadings.NO_READING:
+            stat.summary(DiagnosticStatus.STALE, "Unable to read battery currents")
         else:
-            stat.add("Port Battery", "{:.2f}A".format(port_current))
-            stat.add("Starboard Battery", "{:.2f}A".format(stbd_current))
-
             if port_current >= self._error_current or stbd_current >= self._error_current:
                 if port_current >= self._error_current and stbd_current >= self._error_current:
                     battery_error = "Both Batteries (P: {:.2f}A - S: {:.2f}A)".format(port_current, stbd_current)
@@ -160,11 +161,14 @@ class ThrusterCurrentTask(diagnostic_updater.DiagnosticTask):
     def run(self, stat):
         electrical_reading = self._electrical_readings_msg.get_value()
 
-        if electrical_reading is not None:
-            thruster_currents = electrical_reading.esc_current
+        if electrical_reading is None:
+            stat.summary(DiagnosticStatus.STALE, "No data available from copro")
+            return stat
 
-        if electrical_reading is None or ElectricalReadings.NO_READING in thruster_currents:
-            stat.summary(DiagnosticStatus.STALE, "No data available from copro publisher")
+        thruster_currents = electrical_reading.esc_current
+
+        if ElectricalReadings.NO_READING in thruster_currents:
+            stat.summary(DiagnosticStatus.STALE, "Unable to read thruster currents")
         else:
             error_thrusters = []
             warning_thrusters = []
@@ -237,14 +241,18 @@ class FiveVoltMonitorTask(diagnostic_updater.DiagnosticTask):
     def run(self, stat):
         electrical_reading = self._electrical_readings_msg.get_value()
 
-        if electrical_reading is not None:
-            rail_voltage = electrical_reading.five_volt_voltage
-            rail_current = electrical_reading.five_volt_current
+        if electrical_reading is None:
+            stat.summary(DiagnosticStatus.STALE, "No data available from copro")
+            return stat
+        
+        rail_voltage = electrical_reading.five_volt_voltage
+        rail_current = electrical_reading.five_volt_current
 
-        if electrical_reading is None or rail_voltage == ElectricalReadings.NO_READING or rail_current == ElectricalReadings.NO_READING:
-            stat.summary(DiagnosticStatus.STALE, "No data available from copro publisher")
+        if rail_voltage == ElectricalReadings.NO_READING or rail_current == ElectricalReadings.NO_READING:
+            stat.summary(DiagnosticStatus.STALE, "Unable to read 5V rail")
         else:
-            stat.add("5V Rail", "{:.2f}V {:.2f}A".format(rail_voltage, rail_current))
+            stat.add("5V Rail Voltage", "{:.2f}V".format(rail_voltage))
+            stat.add("5V Rail Current", "{:.2f}A".format(rail_current))
 
             if rail_current >= self._warn_current_max:
                 stat.summary(DiagnosticStatus.WARN, "Rail ({:.2f}A) above nominal rail current ({}A)".format(rail_current, self._warn_current_max))
@@ -271,14 +279,18 @@ class TwelveVoltMonitorTask(diagnostic_updater.DiagnosticTask):
     def run(self, stat):
         electrical_reading = self._electrical_readings_msg.get_value()
 
-        if electrical_reading is not None:
-            rail_voltage = electrical_reading.five_volt_voltage
-            rail_current = electrical_reading.five_volt_current
+        if electrical_reading is None:
+            stat.summary(DiagnosticStatus.STALE, "No data available from copro")
+            return stat
 
-        if electrical_reading is None or rail_voltage == ElectricalReadings.NO_READING or rail_current == ElectricalReadings.NO_READING:
-            stat.summary(DiagnosticStatus.STALE, "No data available from copro publisher")
+        rail_voltage = electrical_reading.twelve_volt_voltage
+        rail_current = electrical_reading.twelve_volt_current
+
+        if rail_voltage == ElectricalReadings.NO_READING or rail_current == ElectricalReadings.NO_READING:
+            stat.summary(DiagnosticStatus.STALE, "Unable to read 12V rail")
         else:
             stat.add("12V Rail Voltage", "{:.2f}V".format(rail_voltage))
+            stat.add("12V Rail Current", "{:.2f}A".format(rail_current))
 
             if rail_current >= self._warn_current_max:
                 stat.summary(DiagnosticStatus.WARN, "Rail ({:.2f}A) above nominal rail current ({}A)".format(rail_current, self._warn_current_max))
@@ -304,11 +316,14 @@ class BalancedVoltageMonitorTask(diagnostic_updater.DiagnosticTask):
     def run(self, stat):
         electrical_reading = self._electrical_readings_msg.get_value()
 
-        if electrical_reading is not None:
-            rail_voltage = electrical_reading.balanced_voltage
+        if electrical_reading is None:
+            stat.summary(DiagnosticStatus.STALE, "No data available from copro")
+            return stat
+        
+        rail_voltage = electrical_reading.balanced_voltage
 
-        if electrical_reading is None or rail_voltage == ElectricalReadings.NO_READING:
-            stat.summary(DiagnosticStatus.STALE, "No data available from copro publisher")
+        if rail_voltage == ElectricalReadings.NO_READING:
+            stat.summary(DiagnosticStatus.STALE, "Unable to read V+ rail voltage")
         else:
             stat.add("V+ Rail Voltage", "{:.2f}V".format(rail_voltage))
 
@@ -352,7 +367,7 @@ class VoltageMonitor:
         updater.add(BatteryVoltageTask(self.electrical_readings_msg, thresholds["battery_volt"]))
         updater.add(BatteryCurrentTask(self.electrical_readings_msg, thresholds["battery_current"]))
         updater.add(ThrusterCurrentTask(self.electrical_readings_msg, thresholds["thruster_current"]))
-        if current_robot == TEMPEST_ROBOT:
+        if current_robot == "tempest":
             updater.add(FiveVoltMonitorTask(self.electrical_readings_msg, thresholds["five_volt"]))
             updater.add(TwelveVoltMonitorTask(self.electrical_readings_msg, thresholds["twelve_volt"]))
         updater.add(BalancedVoltageMonitorTask(self.electrical_readings_msg, thresholds["balanced_volt"]))
@@ -361,9 +376,10 @@ class VoltageMonitor:
 
         rclpy.spin(node, None)
 
-def main():
-    monitor = VoltageMonitor()
-    monitor.run()
+    @staticmethod
+    def main():
+        monitor = VoltageMonitor()
+        monitor.run()
 
 if __name__ == '__main__':
-    main()
+    VoltageMonitor.main()

@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 
+import rclpy
 import socket
 import psutil
-import rospy
 from diagnostic_msgs.msg import DiagnosticStatus
-from diagnostic_updater import DiagnosticTask, Updater
-import shutil
+import diagnostic_updater
 import subprocess
+import yaml
 
 
-class CpuTask(DiagnosticTask):
+class CpuTask(diagnostic_updater.DiagnosticTask):
     def __init__(self, warning_percentage):
-        DiagnosticTask.__init__(self, "CPU Information")
+        diagnostic_updater.DiagnosticTask.__init__(self, "CPU Information")
         self._warning_percentage = int(warning_percentage)
 
 
@@ -32,9 +32,9 @@ class CpuTask(DiagnosticTask):
 
         return stat
 
-class CoreTempTask(DiagnosticTask):
+class CoreTempTask(diagnostic_updater.DiagnosticTask):
     def __init__(self, warning_percentage):
-        DiagnosticTask.__init__(self, "Core Temperature")
+        diagnostic_updater.DiagnosticTask.__init__(self, "Core Temperature")
         self._warning_percentage = int(warning_percentage)
 
     def run(self, stat):
@@ -72,9 +72,9 @@ class CoreTempTask(DiagnosticTask):
     def has_hardware():
         return "coretemp" in psutil.sensors_temperatures()
 
-class ComputerTempTask(DiagnosticTask):
+class ComputerTempTask(diagnostic_updater.DiagnosticTask):
     def __init__(self, warning_percentage, error_temp):
-        DiagnosticTask.__init__(self, "Computer Temperature")
+        diagnostic_updater.DiagnosticTask.__init__(self, "Computer Temperature")
         self._warning_percentage = int(warning_percentage)
         self._error_temp = error_temp
 
@@ -99,9 +99,9 @@ class ComputerTempTask(DiagnosticTask):
     def has_hardware():
         return "thermal-fan-est" in psutil.sensors_temperatures()
 
-class MemoryTask(DiagnosticTask):
+class MemoryTask(diagnostic_updater.DiagnosticTask):
     def __init__(self, warning_percentage):
-        DiagnosticTask.__init__(self, "Memory Information")
+        diagnostic_updater.DiagnosticTask.__init__(self, "Memory Information")
         self._warning_percentage = int(warning_percentage)
 
     def run(self, stat):
@@ -119,9 +119,9 @@ class MemoryTask(DiagnosticTask):
 
         return stat
 
-class DiskTask(DiagnosticTask):
+class DiskTask(diagnostic_updater.DiagnosticTask):
     def __init__(self, warning_percentage):
-        DiagnosticTask.__init__(self, "Disk Information")
+        diagnostic_updater.DiagnosticTask.__init__(self, "Disk Information")
         self._warning_percentage = int(warning_percentage)
 
     def run(self, stat):
@@ -152,9 +152,9 @@ class DiskTask(DiagnosticTask):
 
         return stat
 
-class GPUTask(DiagnosticTask):
+class GPUTask(diagnostic_updater.DiagnosticTask):
     def __init__(self, warning_percentage):
-        DiagnosticTask.__init__(self, "GPU Information")
+        diagnostic_updater.DiagnosticTask.__init__(self, "GPU Information")
         self._warning_percentage = int(warning_percentage)
 
     def run(self, stat):
@@ -202,25 +202,32 @@ class GPUTask(DiagnosticTask):
 
 def main():
     hostname = socket.gethostname()
-    rospy.init_node("computer_monitor")
+    rclpy.init()
+    node = rclpy.create_node('computer_monitor')
+    node.declare_parameter('diag_thresholds_file', rclpy.Parameter.Type.STRING)
 
-    updater = Updater()
+    # Load config file
+    with open(node.get_parameter('diag_thresholds_file').value, 'r') as stream:
+        thresholds_file = yaml.safe_load(stream)
+    thresholds = thresholds_file["computer_monitor_thresholds"]
+
+    # Create diagnostics updater
+    updater = diagnostic_updater.Updater(node)
     updater.setHardwareID(hostname)
 
-    updater.add(CpuTask(rospy.get_param("~cpu_warning_percentage", 90)))
-    updater.add(MemoryTask(rospy.get_param("~memory_warning_percentage", 90)))
-    updater.add(DiskTask(rospy.get_param("~disk_warning_percentage", 90)))
+    updater.add(CpuTask(thresholds["cpu_warning_percentage"]))
+    updater.add(MemoryTask(thresholds["memory_warning_percentage"]))
+    updater.add(DiskTask(thresholds["disk_warning_percentage"]))
     if ComputerTempTask.has_hardware():
-        updater.add(ComputerTempTask(rospy.get_param("!temp_warning_percentage", 90), 50))
+        updater.add(ComputerTempTask(thresholds["temp_warning_percentage"], thresholds["computer_error_temp_c"]))
     if CoreTempTask.has_hardware():
-        updater.add(CoreTempTask(rospy.get_param("~temp_warning_percentage", 90)))
+        updater.add(CoreTempTask(thresholds["temp_warning_percentage"]))
     if GPUTask.has_hardware():
-        updater.add(GPUTask(rospy.get_param("~gpu_warning_percentage", 90)))
+        updater.add(GPUTask(thresholds["gpu_warning_percentage"]))
 
-    rate = rospy.get_param("~rate", 1)
-    rospy.Timer(rospy.Duration(1 / rate), lambda _: updater.update())
+    updater.force_update()
 
-    rospy.spin()
+    rclpy.spin(node, None)
 
 
 if __name__ == '__main__':

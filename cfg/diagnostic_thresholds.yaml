@@ -20,9 +20,19 @@ volt_cur_thresholds:
   balanced_volt:
     warn_voltage_min: 18.5
     warn_voltage_max: 22
-device_thresholds:
+electrical_monitor_thresholds:
   copro_mem_warn_percentage: 90
   temp_over_target_warn: 10
+  water_low_warn_temp: 18.0
+  water_high_warn_temp: 35.0
+computer_monitor_thresholds:
+  cpu_warning_percentage: 90
+  memory_warning_percentage: 90
+  disk_warning_percentage: 90
+  gpu_warning_percentage: 90
+  computer_error_temp_c: 60
+  temp_warning_percentage: 90
+
 
 # Lifetime of expiring message before it is marked as stale
 ros_message_lifetime: 3

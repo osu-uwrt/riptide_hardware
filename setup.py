@@ -25,8 +25,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'electrical_monitor = riptide_hardware2.electrical_monitor:main',
-            'voltage_monitor = riptide_hardware2.voltage_monitor:main',
+            'electrical_monitor = riptide_hardware2.electrical_monitor:ElectricalMonitor.main',
+            'voltage_monitor = riptide_hardware2.voltage_monitor:VoltageMonitor.main',
             'sensor_monitor = riptide_hardware2.sensor_monitor:main',
             'computer_monitor = riptide_hardware2.computer_monitor:main',
             'test_node = riptide_hardware2.test_node:main',
