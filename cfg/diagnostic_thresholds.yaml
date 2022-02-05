@@ -35,4 +35,4 @@ computer_monitor_thresholds:
 
 
 # Lifetime of expiring message before it is marked as stale
-ros_message_lifetime: 3
+ros_message_lifetime: 1

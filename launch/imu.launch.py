@@ -10,33 +10,23 @@ from launch.substitutions import LaunchConfiguration as LC
 import os
 
 imu_launch_file = os.path.join(
-    get_package_share_directory('imu_3dm_gx4'),
-    "launch", "imu.launch.py"
-)
-
-merge_launch_file = os.path.join(
-    get_package_share_directory('imu_3dm_gx4'),
-    "launch", "merge.launch.py"
+    get_package_share_directory('microstrain_inertial_driver'),
+    "launch", "microstrain_launch.py"
 )
 
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('robot', default_value="puddles", description="Name of the vehicle"),
-        DeclareLaunchArgument('device', default_value="/dev/imu_riptide"),
-        DeclareLaunchArgument('enable_mag_update', default_value=True),
-        DeclareLaunchArgument('use_enu_frame', default_value=True),
+        DeclareLaunchArgument('port', default_value="/dev/imu_riptide"),
 
         IncludeLaunchDescription(
             AnyLaunchDescriptionSource(imu_launch_file),
             launch_arguments=[
-                ('device', LC('device')),
-                ('frame_id', [LC('robot'), '/imu_link']),
-                ('enable_mag_update', LC('enable_mag_update')),
-                ('use_enu_frame', LC('use_enu_frame')),
+                ('params_file', os.path.join(get_package_share_directory('riptide_hardware2'), "cfg", "imu_config.yaml")),
+#                ('configure', True),
+#                ('activate', True),
+                ('port', LC('port')),
+                ('imu_frame_id', [LC('robot'), '/imu_link']),
             ]
-        ),
-
-        IncludeLaunchDescription(
-            AnyLaunchDescriptionSource(merge_launch_file)
         )
     ])

@@ -1,41 +1,25 @@
 #!/usr/bin/env python3
 
-import rospy
+import rclpy
 import socket
-import time
+import yaml
 from diagnostic_msgs.msg import DiagnosticStatus
 from nortek_dvl.msg import DvlStatus
 from sensor_msgs.msg import Imu
 from geometry_msgs.msg import TwistWithCovarianceStamped
 from diagnostic_updater import DiagnosticTask, Updater
 
-ROS_MESSAGE_LIFETIME = 3
-
-class ExpiringMessage:
-    def __init__(self, message_life):
-        self._value = None
-        self._receive_time = 0
-        self._message_life = message_life
-    
-    def update_value(self, value):
-        self._value = value
-        self._receive_time = time.time()
-    
-    def get_value(self):
-        if time.time() - self._receive_time < self._message_life:
-            return self._value
-        else:
-            return None
+from .common import ExpiringMessage
 
 class DVLSensorTask(DiagnosticTask):
-    def __init__(self):
+    def __init__(self, node: 'rclpy.Node', msg_lifetime):
         DiagnosticTask.__init__(self, "DVL Sensor")
 
-        self._dvl_status = ExpiringMessage(ROS_MESSAGE_LIFETIME)
-        self._dvl_twist = ExpiringMessage(ROS_MESSAGE_LIFETIME)
+        self._dvl_status = ExpiringMessage(node.get_clock(), msg_lifetime)
+        self._dvl_twist = ExpiringMessage(node.get_clock(), msg_lifetime)
 
-        rospy.Subscriber('dvl/status', DvlStatus, self.dvl_status_callback, queue_size=1)
-        rospy.Subscriber('dvl_twist', TwistWithCovarianceStamped, self.dvl_twist_callback, queue_size=1)
+        node.create_subscription(DvlStatus, 'dvl/status', self.dvl_status_callback, 1)
+        node.create_subscription(TwistWithCovarianceStamped, 'dvl_twist', self.dvl_twist_callback, 1)
 
     def dvl_status_callback(self, msg):
         self._dvl_status.update_value(msg)
@@ -88,12 +72,12 @@ class DVLSensorTask(DiagnosticTask):
         return stat
 
 class IMUSensorTask(DiagnosticTask):
-    def __init__(self):
+    def __init__(self, node: 'rclpy.Node', msg_lifetime):
         DiagnosticTask.__init__(self, "IMU Sensor")
 
-        self._imu_status = ExpiringMessage(ROS_MESSAGE_LIFETIME)
+        self._imu_status = ExpiringMessage(node.get_clock(), msg_lifetime)
 
-        rospy.Subscriber('imu/imu', Imu, self.imu_callback, queue_size=1)
+        node.create_subscription(Imu, 'imu/imu', self.imu_callback, 1)
 
     def imu_callback(self, msg):
         self._imu_status.update_value(True)
@@ -111,19 +95,22 @@ class IMUSensorTask(DiagnosticTask):
 
 def main():
     hostname = socket.gethostname()
-    rospy.init_node("sensor_monitor")
+    rclpy.init()
+    node = rclpy.create_node("sensor_monitor")
+    node.declare_parameter('diag_thresholds_file', rclpy.Parameter.Type.STRING)
+    with open(node.get_parameter('diag_thresholds_file').value, 'r') as stream:
+        thresholds_file = yaml.safe_load(stream)
+    message_lifetime = float(thresholds_file["ros_message_lifetime"])
 
-    updater = Updater()
+    updater = Updater(node)
     updater.setHardwareID(hostname)
 
-    updater.add(DVLSensorTask())
-    updater.add(IMUSensorTask())
+    updater.add(DVLSensorTask(node, message_lifetime))
+    updater.add(IMUSensorTask(node, message_lifetime))
 
-    rate = rospy.get_param("~rate", 1)
-    rospy.Timer(rospy.Duration(1 / rate), lambda _: updater.update())
+    updater.force_update()
 
-    rospy.spin()
-
+    rclpy.spin(node, None)
 
 if __name__ == '__main__':
     main()

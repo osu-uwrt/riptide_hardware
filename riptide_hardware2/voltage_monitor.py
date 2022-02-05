@@ -2,28 +2,13 @@
 
 import rclpy
 import socket
-import time
 import yaml
 from rclpy.qos import QoSPresetProfiles
 import diagnostic_updater
 from riptide_msgs2.msg import ElectricalReadings
 from diagnostic_msgs.msg import DiagnosticStatus
 
-class ExpiringMessage:
-    def __init__(self, message_life):
-        self._value = None
-        self._receive_time = 0
-        self._message_life = message_life
-    
-    def update_value(self, value):
-        self._value = value
-        self._receive_time = time.time()
-    
-    def get_value(self):
-        if time.time() - self._receive_time < self._message_life:
-            return self._value
-        else:
-            return None
+from .common import ExpiringMessage
 
 class BatteryVoltageTask(diagnostic_updater.DiagnosticTask):
     def __init__(self, electrical_readings_msg: ExpiringMessage, batt_voltage_thresholds):
@@ -50,7 +35,7 @@ class BatteryVoltageTask(diagnostic_updater.DiagnosticTask):
         stat.add("Thruster Shutoff Voltage", "{}V".format(self._error_voltage))
 
         if port_voltage == ElectricalReadings.NO_READING or stbd_voltage == ElectricalReadings.NO_READING:
-            stat.summary(DiagnosticStatus.STALE, "Unable to read battery voltages")
+            stat.summary(DiagnosticStatus.ERROR, "Unable to read battery voltages")
         else:
             difference_note = ""
             batt_low_note = ""
@@ -109,7 +94,7 @@ class BatteryCurrentTask(diagnostic_updater.DiagnosticTask):
         stat.add("Starboard Battery", "{:.2f}A".format(stbd_current))
 
         if port_current == ElectricalReadings.NO_READING or stbd_current == ElectricalReadings.NO_READING:
-            stat.summary(DiagnosticStatus.STALE, "Unable to read battery currents")
+            stat.summary(DiagnosticStatus.ERROR, "Unable to read battery currents")
         else:
             if port_current >= self._error_current or stbd_current >= self._error_current:
                 if port_current >= self._error_current and stbd_current >= self._error_current:
@@ -168,7 +153,7 @@ class ThrusterCurrentTask(diagnostic_updater.DiagnosticTask):
         thruster_currents = electrical_reading.esc_current
 
         if ElectricalReadings.NO_READING in thruster_currents:
-            stat.summary(DiagnosticStatus.STALE, "Unable to read thruster currents")
+            stat.summary(DiagnosticStatus.ERROR, "Unable to read thruster currents")
         else:
             error_thrusters = []
             warning_thrusters = []
@@ -249,7 +234,7 @@ class FiveVoltMonitorTask(diagnostic_updater.DiagnosticTask):
         rail_current = electrical_reading.five_volt_current
 
         if rail_voltage == ElectricalReadings.NO_READING or rail_current == ElectricalReadings.NO_READING:
-            stat.summary(DiagnosticStatus.STALE, "Unable to read 5V rail")
+            stat.summary(DiagnosticStatus.ERROR, "Unable to read 5V rail")
         else:
             stat.add("5V Rail Voltage", "{:.2f}V".format(rail_voltage))
             stat.add("5V Rail Current", "{:.2f}A".format(rail_current))
@@ -287,7 +272,7 @@ class TwelveVoltMonitorTask(diagnostic_updater.DiagnosticTask):
         rail_current = electrical_reading.twelve_volt_current
 
         if rail_voltage == ElectricalReadings.NO_READING or rail_current == ElectricalReadings.NO_READING:
-            stat.summary(DiagnosticStatus.STALE, "Unable to read 12V rail")
+            stat.summary(DiagnosticStatus.ERROR, "Unable to read 12V rail")
         else:
             stat.add("12V Rail Voltage", "{:.2f}V".format(rail_voltage))
             stat.add("12V Rail Current", "{:.2f}A".format(rail_current))
@@ -323,7 +308,7 @@ class BalancedVoltageMonitorTask(diagnostic_updater.DiagnosticTask):
         rail_voltage = electrical_reading.balanced_voltage
 
         if rail_voltage == ElectricalReadings.NO_READING:
-            stat.summary(DiagnosticStatus.STALE, "Unable to read V+ rail voltage")
+            stat.summary(DiagnosticStatus.ERROR, "Unable to read V+ rail voltage")
         else:
             stat.add("V+ Rail Voltage", "{:.2f}V".format(rail_voltage))
 
@@ -357,8 +342,8 @@ class VoltageMonitor:
         thresholds = thresholds_file["volt_cur_thresholds"]
 
         # Subscribe to messages
-        self.electrical_readings_msg = ExpiringMessage(message_lifetime)
-        node.create_subscription(ElectricalReadings, "state/electrical", self.electrical_readings_cb, QoSPresetProfiles.SENSOR_DATA.value)
+        self.electrical_readings_msg = ExpiringMessage(node.get_clock(), message_lifetime)
+        node.create_subscription(ElectricalReadings, "state/electrical", self.electrical_state_cb, QoSPresetProfiles.SENSOR_DATA.value)
 
         # Create diagnostics updater
         updater = diagnostic_updater.Updater(node)

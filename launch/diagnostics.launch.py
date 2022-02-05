@@ -5,13 +5,24 @@ from ament_index_python.packages import get_package_share_directory
 from launch.substitutions import LaunchConfiguration as LC
 import os
 
+analyzer_params_filepath = os.path.join(get_package_share_directory('riptide_hardware2'), 'cfg', 'diagnostic_analyzers.yaml')
+thresholds_file = os.path.join(get_package_share_directory('riptide_hardware2'), 'cfg', 'diagnostic_thresholds.yaml')
+
+aggregator = Node(
+    package='diagnostic_aggregator',
+    executable='aggregator_node',
+    output='screen',
+    parameters=[analyzer_params_filepath],
+    arguments=['--ros-args', '--log-level', 'INFO']
+)
+
 electrical_monitor_node = Node(
     name='electrical_monitor',
     package='riptide_hardware2',
     executable='electrical_monitor',
     output='screen',
     parameters=[
-        {"diag_thresholds_file": os.path.join(get_package_share_directory('riptide_hardware2'), 'cfg', 'diagnostic_thresholds.yaml')},
+        {"diag_thresholds_file": thresholds_file},
         {"robot": LC('robot')},
     ]
 )
@@ -22,7 +33,7 @@ voltage_monitor_node = Node(
     executable='voltage_monitor',
     output='screen',
     parameters=[
-        {"diag_thresholds_file": os.path.join(get_package_share_directory('riptide_hardware2'), 'cfg', 'diagnostic_thresholds.yaml')},
+        {"diag_thresholds_file": thresholds_file},
         {"robot": LC('robot')},
     ]
 )
@@ -31,14 +42,20 @@ sensor_monitor_node = Node(
     name='sensor_monitor',
     package='riptide_hardware2',
     executable='sensor_monitor',
-    output='screen'
+    output='screen',
+    parameters=[
+        {"diag_thresholds_file": thresholds_file},
+    ]
 )
 
 computer_monitor_node = Node(
     name='computer_monitor',
     package='riptide_hardware2',
     executable='computer_monitor',
-    output='screen'
+    output='screen',
+    parameters=[
+        {"diag_thresholds_file": thresholds_file},
+    ]
 )
 
 def generate_launch_description():
@@ -48,5 +65,6 @@ def generate_launch_description():
         electrical_monitor_node,
         voltage_monitor_node,
         sensor_monitor_node,
-        computer_monitor_node
+        computer_monitor_node,
+        aggregator
     ])

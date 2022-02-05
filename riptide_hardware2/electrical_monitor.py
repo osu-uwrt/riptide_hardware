@@ -3,11 +3,12 @@
 import rclpy
 import diagnostic_updater
 import socket
-import time
 import yaml
 from rclpy.qos import QoSPresetProfiles
 from riptide_msgs2.msg import FirmwareState, KillSwitchReport, RobotState
 from diagnostic_msgs.msg import DiagnosticStatus
+
+from .common import ExpiringMessage
 
 ERROR_DESCRIPTIONS = [
     "FAULT_WATCHDOG_RESET",    #  0
@@ -25,22 +26,6 @@ ERROR_DESCRIPTIONS = [
     "FAULT_LOWBATT_STALE",     # 12
     "FAULT_LOW_BATTERY",       # 13
 ]
-
-class ExpiringMessage:
-    def __init__(self, message_life):
-        self._value = None
-        self._receive_time = 0
-        self._message_life = message_life
-    
-    def update_value(self, value):
-        self._value = value
-        self._receive_time = time.time()
-    
-    def get_value(self):
-        if time.time() - self._receive_time < self._message_life:
-            return self._value
-        else:
-            return None
 
 class CoprocessorStatusTask(diagnostic_updater.DiagnosticTask):
     def __init__(self, firmware_state, warning_percentage):
@@ -107,8 +92,8 @@ class RobotTemperatureTask(diagnostic_updater.DiagnosticTask):
         stat.add("Cooling Temperature Threshold", str(temp_threshold) + "C")
         stat.add("Peltier Powered", str(peltier_power))
             
-        if temperature is None:
-            stat.summary(DiagnosticStatus.STALE, "Unable to read temperature sensor")
+        if temperature == RobotState.NO_READING:
+            stat.summary(DiagnosticStatus.ERROR, "Unable to read temperature sensor")
         else:
             stat.add("Robot Temperature", "{:.2f}C".format(temperature))
 
@@ -147,7 +132,7 @@ class WaterTemperatureTask(diagnostic_updater.DiagnosticTask):
         stat.add("Temperature", "{:.3f}C".format(water_temp))
 
         if water_temp == RobotState.NO_READING:
-            stat.summary(DiagnosticStatus.STALE, "Unable to read water temp")
+            stat.summary(DiagnosticStatus.ERROR, "Unable to read water temp")
         elif water_temp >= self._warn_temp_above:
             stat.summary(DiagnosticStatus.WARN, "Temp {:.2f}C above nominal water temp {:.1f}C".format(water_temp, self._warn_temp_above))
         elif water_temp <= self._warn_temp_below:
@@ -291,12 +276,12 @@ class ElectricalMonitor:
         # Load config file
         with open(node.get_parameter('diag_thresholds_file').value, 'r') as stream:
             thresholds_file = yaml.safe_load(stream)
-        message_lifetime = thresholds_file["ros_message_lifetime"]
+        message_lifetime = float(thresholds_file["ros_message_lifetime"])
         thresholds = thresholds_file["electrical_monitor_thresholds"]
 
         # Subscribe to messages
-        self.firmware_state_msg = ExpiringMessage(message_lifetime)
-        self.robot_state_msg = ExpiringMessage(message_lifetime)
+        self.firmware_state_msg = ExpiringMessage(node.get_clock(), message_lifetime)
+        self.robot_state_msg = ExpiringMessage(node.get_clock(), message_lifetime)
         node.create_subscription(FirmwareState, "state/firmware", self.firmware_state_cb, QoSPresetProfiles.SENSOR_DATA.value)
         node.create_subscription(RobotState, "state/robot", self.robot_state_cb, QoSPresetProfiles.SENSOR_DATA.value)
 
@@ -319,7 +304,7 @@ class ElectricalMonitor:
     @staticmethod
     def main():
         monitor = ElectricalMonitor()
-        monitor.start()
+        monitor.run()
 
 
 if __name__ == '__main__':
