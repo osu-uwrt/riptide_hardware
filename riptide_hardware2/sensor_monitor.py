@@ -77,7 +77,7 @@ class IMUSensorTask(DiagnosticTask):
 
         self._imu_status = ExpiringMessage(node.get_clock(), msg_lifetime)
 
-        node.create_subscription(Imu, 'imu/imu', self.imu_callback, 1)
+        node.create_subscription(Imu, 'imu/data', self.imu_callback, 1)
 
     def imu_callback(self, msg):
         self._imu_status.update_value(True)

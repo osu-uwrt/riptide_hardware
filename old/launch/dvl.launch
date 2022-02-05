@@ -1,8 +1,0 @@
-<launch>
-  <arg name="robot" default="puddles" doc="Name of the vehicle"/>
-
-  <include file="$(find nortek_dvl)/launch/dvl.launch">
-    <arg name="frame_id" value="$(arg robot)/dvl_link" />
-    <arg name="sonar_frame_id" value="$(arg robot)/dvl_sonar%d_link" />
-  </include>
-</launch>

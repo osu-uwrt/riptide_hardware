@@ -1,4 +1,3 @@
-from matplotlib.pyplot import get
 import launch
 from launch.launch_description import LaunchDescription
 from launch.actions import DeclareLaunchArgument
@@ -17,15 +16,16 @@ imu_launch_file = os.path.join(
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('robot', default_value="puddles", description="Name of the vehicle"),
-        DeclareLaunchArgument('port', default_value="/dev/imu_riptide"),
+        DeclareLaunchArgument('serial_port', default_value="/dev/imu_riptide"),
 
         IncludeLaunchDescription(
             AnyLaunchDescriptionSource(imu_launch_file),
             launch_arguments=[
                 ('params_file', os.path.join(get_package_share_directory('riptide_hardware2'), "cfg", "imu_config.yaml")),
-#                ('configure', True),
-#                ('activate', True),
-                ('port', LC('port')),
+                ('namespace', ['/', LC('robot')]),
+                ('configure', 'true'),
+                ('activate', 'true'),
+                ('port', LC('serial_port')),
                 ('imu_frame_id', [LC('robot'), '/imu_link']),
             ]
         )
