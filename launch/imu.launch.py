@@ -22,7 +22,7 @@ def generate_launch_description():
             AnyLaunchDescriptionSource(imu_launch_file),
             launch_arguments=[
                 ('params_file', os.path.join(get_package_share_directory('riptide_hardware2'), "cfg", "imu_config.yaml")),
-                ('namespace', ['/', LC('robot')]),
+                ('namespace', ['/', LC('robot'), '/imu']),
                 ('configure', 'true'),
                 ('activate', 'true'),
                 ('port', LC('serial_port')),

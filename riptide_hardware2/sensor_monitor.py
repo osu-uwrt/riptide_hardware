@@ -3,6 +3,7 @@
 import rclpy
 import socket
 import yaml
+from rclpy.qos import qos_profile_sensor_data
 from diagnostic_msgs.msg import DiagnosticStatus
 from nortek_dvl.msg import DvlStatus
 from sensor_msgs.msg import Imu
@@ -18,8 +19,8 @@ class DVLSensorTask(DiagnosticTask):
         self._dvl_status = ExpiringMessage(node.get_clock(), msg_lifetime)
         self._dvl_twist = ExpiringMessage(node.get_clock(), msg_lifetime)
 
-        node.create_subscription(DvlStatus, 'dvl/status', self.dvl_status_callback, 1)
-        node.create_subscription(TwistWithCovarianceStamped, 'dvl_twist', self.dvl_twist_callback, 1)
+        node.create_subscription(DvlStatus, 'dvl/status', self.dvl_status_callback, qos_profile_sensor_data)
+        node.create_subscription(TwistWithCovarianceStamped, 'dvl_twist', self.dvl_twist_callback, qos_profile_sensor_data)
 
     def dvl_status_callback(self, msg):
         self._dvl_status.update_value(msg)
@@ -77,7 +78,7 @@ class IMUSensorTask(DiagnosticTask):
 
         self._imu_status = ExpiringMessage(node.get_clock(), msg_lifetime)
 
-        node.create_subscription(Imu, 'imu/data', self.imu_callback, 1)
+        node.create_subscription(Imu, 'imu/imu/data', self.imu_callback, qos_profile_sensor_data)
 
     def imu_callback(self, msg):
         self._imu_status.update_value(True)

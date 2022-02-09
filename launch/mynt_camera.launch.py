@@ -18,6 +18,7 @@ mynt_camera_node = Node(
     package='mynteye_wrapper_d',
     executable='mynteye_wrapper_d_node',
     output='screen',
+    arguments=['--ros-args', '--log-level', 'WARN'],
     parameters=[
         # Camera params
         {"dev_index": LC('dev_index')},

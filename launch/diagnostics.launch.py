@@ -13,7 +13,7 @@ aggregator = Node(
     executable='aggregator_node',
     output='screen',
     parameters=[analyzer_params_filepath],
-    arguments=['--ros-args', '--log-level', 'INFO']
+    arguments=['--ros-args', '--log-level', 'WARN']
 )
 
 electrical_monitor_node = Node(

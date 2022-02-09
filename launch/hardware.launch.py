@@ -56,12 +56,12 @@ def generate_launch_description():
                 ('robot', LC('robot')),
             ]
         ),
-        IncludeLaunchDescription(
-            AnyLaunchDescriptionSource(imu_launch_file),
-            launch_arguments=[
-                ('robot', LC('robot')),
-            ]
-        ),
+        # IncludeLaunchDescription(
+        #     AnyLaunchDescriptionSource(imu_launch_file),
+        #     launch_arguments=[
+        #         ('robot', LC('robot')),
+        #     ]
+        # ),
         IncludeLaunchDescription(
             AnyLaunchDescriptionSource(mynt_camera_launch_file),
             launch_arguments=[
