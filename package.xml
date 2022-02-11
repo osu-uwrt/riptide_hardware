@@ -30,6 +30,7 @@
   <exec_depend>riptide_msgs2</exec_depend>
   <exec_depend>image_view</exec_depend>
   <exec_depend>image_publisher</exec_depend>
+  <exec_depend>image_proc</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>
