@@ -73,7 +73,7 @@ mynt_camera_node = Node(
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument('robot', default_value='puddles', description="Name of the vehicle"),
+        DeclareLaunchArgument('robot', default_value='tempest', description="Name of the vehicle"),
         DeclareLaunchArgument('dev_index', default_value='0'),
         DeclareLaunchArgument('name', default_value='stereo'),
 

@@ -60,7 +60,7 @@ computer_monitor_node = Node(
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument('robot', default_value="puddles", description="Name of the vehicle"),
+        DeclareLaunchArgument('robot', default_value="tempest", description="Name of the vehicle"),
 
         electrical_monitor_node,
         voltage_monitor_node,
