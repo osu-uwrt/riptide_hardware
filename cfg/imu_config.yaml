@@ -1,6 +1,8 @@
-/tempest/microstrain_inertial_driver:
+/tempest/imu/microstrain_inertial_driver:
   ros__parameters:
     # note: port and imu_frame_id passed from launch arguments
     filter_enable_magnetometer_aiding: true
+    filter_frame_id: world
+    filter_child_frame_id: tempest/imu_link
     use_enu_frame: true
     use_ros_time: true
