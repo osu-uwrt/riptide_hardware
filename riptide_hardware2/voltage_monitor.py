@@ -349,12 +349,12 @@ class VoltageMonitor:
         updater = diagnostic_updater.Updater(node)
         updater.setHardwareID(hostname)
 
-        updater.add(BatteryVoltageTask(self.electrical_readings_msg, thresholds["battery_volt"]))
-        updater.add(BatteryCurrentTask(self.electrical_readings_msg, thresholds["battery_current"]))
-        updater.add(ThrusterCurrentTask(self.electrical_readings_msg, thresholds["thruster_current"]))
-        if current_robot == "tempest":
-            updater.add(FiveVoltMonitorTask(self.electrical_readings_msg, thresholds["five_volt"]))
-            updater.add(TwelveVoltMonitorTask(self.electrical_readings_msg, thresholds["twelve_volt"]))
+        #updater.add(BatteryVoltageTask(self.electrical_readings_msg, thresholds["battery_volt"]))
+        #updater.add(BatteryCurrentTask(self.electrical_readings_msg, thresholds["battery_current"]))
+        #updater.add(ThrusterCurrentTask(self.electrical_readings_msg, thresholds["thruster_current"]))
+        #if current_robot == "tempest":
+        #    updater.add(FiveVoltMonitorTask(self.electrical_readings_msg, thresholds["five_volt"]))
+        #    updater.add(TwelveVoltMonitorTask(self.electrical_readings_msg, thresholds["twelve_volt"]))
         updater.add(BalancedVoltageMonitorTask(self.electrical_readings_msg, thresholds["balanced_volt"]))
 
         updater.force_update()
