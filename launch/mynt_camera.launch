@@ -1,6 +1,6 @@
 <launch>
   <machine address="localhost" name="local" />
-  <arg name="robot" default="puddles" />
+  <arg name="robot" default="tempest" />
   <arg name="vision_computer" default="local" />
   <arg name="dev_index" default="0" />
   <arg name="name" default="stereo" />

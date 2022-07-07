@@ -1,7 +1,7 @@
 <launch>
   <machine address="localhost" name="local" />
   <arg name="vision_computer" default="local" />
-  <arg name="robot" default="puddles" />
+  <arg name="robot" default="tempest" />
 
   <include file="$(find riptide_hardware)/launch/computer_monitor.launch" />
   <include file="$(find riptide_hardware)/launch/computer_monitor.launch" unless="$(eval vision_computer == 'local')">

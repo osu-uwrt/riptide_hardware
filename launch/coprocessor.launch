@@ -1,7 +1,7 @@
 <launch>
-	<arg name="robot" default="puddles" />
+	<arg name="robot" default="tempest" />
 
-	<param name="vehicle_file" type="string" value="$(find riptide_descriptions)/config/puddles.yaml" />
+	<param name="vehicle_file" type="string" value="$(find riptide_descriptions)/config/tempest.yaml" />
 	<node pkg="riptide_hardware" type="coprocessor.py" name="coprocessor_driver" output="screen" respawn="true">		
 		<param name="current_robot" value="$(arg robot)" />
 	</node>

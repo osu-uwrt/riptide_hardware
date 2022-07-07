@@ -1,5 +1,5 @@
 <launch>
-  <arg name="robot" default="puddles" />
+  <arg name="robot" default="tempest" />
   <arg name="vision_computer" default="local" />
 
   <include file="$(find riptide_hardware)/launch/coprocessor.launch">
