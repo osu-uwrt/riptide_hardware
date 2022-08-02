@@ -24,10 +24,10 @@ dvl_launch_file = os.path.join(
     "launch", "dvl.launch.py"
 )
 
-imu_launch_file = os.path.join(
-    get_package_share_directory('riptide_hardware2'),
-    "launch", "imu.launch.py"
-)
+# imu_launch_file = os.path.join(
+#     get_package_share_directory('riptide_hardware2'),
+#     "launch", "imu.launch.py"
+# )
 
 mynt_camera_launch_file = os.path.join(
     get_package_share_directory('riptide_hardware2'),
@@ -56,12 +56,12 @@ def generate_launch_description():
                 ('robot', LC('robot')),
             ]
         ),
-        IncludeLaunchDescription(
-            AnyLaunchDescriptionSource(imu_launch_file),
-            launch_arguments=[
-                ('robot', LC('robot')),
-            ]
-        )
+        # IncludeLaunchDescription(
+        #     AnyLaunchDescriptionSource(imu_launch_file),
+        #     launch_arguments=[
+        #         ('robot', LC('robot')),
+        #     ]
+        # )
         # IncludeLaunchDescription(
         #     AnyLaunchDescriptionSource(mynt_camera_launch_file),
         #     launch_arguments=[

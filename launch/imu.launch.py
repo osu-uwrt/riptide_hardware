@@ -16,7 +16,7 @@ imu_launch_file = os.path.join(
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('robot', default_value="tempest", description="Name of the vehicle"),
-        DeclareLaunchArgument('serial_port', default_value="/dev/imu_riptide"),
+        DeclareLaunchArgument('serial_port', default_value="/dev/microstrain"),
 
         IncludeLaunchDescription(
             AnyLaunchDescriptionSource(imu_launch_file),
