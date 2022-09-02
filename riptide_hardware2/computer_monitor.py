@@ -33,12 +33,26 @@ class CpuTask(diagnostic_updater.DiagnosticTask):
         return stat
 
 class CoreTempTask(diagnostic_updater.DiagnosticTask):
+    class CoreTempSysfs:
+        critical = 80.0
+        high = 70.0
+        
+        def __init__(self, id):
+            with open("/sys/class/thermal/thermal_zone%d/temp" % id) as f:
+                self.current = int(f.readline().strip()) / 1000.0
+
+            with open("/sys/class/thermal/thermal_zone%d/type" % id) as f:
+                self.label = f.readline().strip()
+            
+
     def __init__(self, warning_percentage):
         diagnostic_updater.DiagnosticTask.__init__(self, "Core Temperature")
         self._warning_percentage = int(warning_percentage)
 
     def run(self, stat):
-        core_temps = psutil.sensors_temperatures()["coretemp"]
+        #core_temps = psutil.sensors_temperatures()["coretemp"]
+        core_temps = [self.CoreTempSysfs(0), self.CoreTempSysfs(1), self.CoreTempSysfs(5),
+                      self.CoreTempSysfs(6), self.CoreTempSysfs(7), self.CoreTempSysfs(9)]
 
         warn = False
         error = False
@@ -68,9 +82,15 @@ class CoreTempTask(diagnostic_updater.DiagnosticTask):
 
         return stat
 
-    @staticmethod
-    def has_hardware():
-        return "coretemp" in psutil.sensors_temperatures()
+    @classmethod
+    def has_hardware(cls):
+        #return "coretemp" in psutil.sensors_temperatures()
+        try:
+            core_temps = [cls.CoreTempSysfs(0), cls.CoreTempSysfs(1), cls.CoreTempSysfs(5),
+                      cls.CoreTempSysfs(6), cls.CoreTempSysfs(7), cls.CoreTempSysfs(9)]
+            return True
+        except:
+            return False
 
 class ComputerTempTask(diagnostic_updater.DiagnosticTask):
     def __init__(self, warning_percentage, error_temp):

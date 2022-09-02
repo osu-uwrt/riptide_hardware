@@ -294,8 +294,7 @@ class ElectricalMonitor:
         updater.add(CoprocessorStatusTask(self.firmware_state_msg, thresholds["copro_mem_warn_percentage"]))
         updater.add(DepthSensorTask(self.firmware_state_msg))
         updater.add(KillSwitchTask(self.robot_state_msg, self.firmware_state_msg))
-        #if current_robot == "tempest":
-        #    updater.add(ActuatorStatusTask(self.firmware_state_msg))
+        updater.add(ActuatorStatusTask(self.firmware_state_msg))
 
         updater.force_update()
 
