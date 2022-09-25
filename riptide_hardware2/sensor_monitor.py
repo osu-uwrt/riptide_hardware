@@ -5,7 +5,7 @@ import socket
 import yaml
 from rclpy.qos import qos_profile_sensor_data
 from diagnostic_msgs.msg import DiagnosticStatus
-from nortek_dvl.msg import DvlStatus
+from nortek_dvl_msgs.msg import DvlStatus
 from sensor_msgs.msg import Imu
 from geometry_msgs.msg import TwistWithCovarianceStamped
 from diagnostic_updater import DiagnosticTask, Updater

@@ -25,6 +25,8 @@ ERROR_DESCRIPTIONS = [
     "FAULT_COOLING_STALE",     # 11
     "FAULT_LOWBATT_STALE",     # 12
     "FAULT_LOW_BATTERY",       # 13
+    "FAULT_ACTUATOR_FAIL",     # 14
+    "FAULT_NO_ACTUATOR",       # 15
 ]
 
 class CoprocessorStatusTask(diagnostic_updater.DiagnosticTask):
