@@ -1,7 +1,7 @@
 /tempest/vectornav:
   ros__parameters:
     # rest of the node params
-    baud: 921600
+    baud: 460800
     reconnect_ms: 500
     # Reference vnproglib-1.2.0.0 headers for enum definitions
     # Async Output Type (ASCII)

@@ -23,7 +23,8 @@ start_vectornav_cmd = Node(
             'port': LC("serial_port")
         }
     ],
-    namespace=LC("robot")
+    respawn=True,
+    # namespace=LC("robot")
 )
 
 start_vectornav_sensor_msgs_cmd = Node(
@@ -37,11 +38,12 @@ start_vectornav_sensor_msgs_cmd = Node(
     remappings=[
         ([TS(text="/"), LC("robot"), TS(text="/vectornav/imu")], [TS(text="/"), LC("robot"), TS(text="/imu/imu/data")])
     ],
-    namespace=LC("robot")
+    respawn=True,
+    # namespace=LC("robot")
 )
 
 robot_arg = DeclareLaunchArgument('robot', default_value="tempest", description="Name of the vehicle")
-serial_arg = DeclareLaunchArgument('serial_port', default_value="/dev/imu_vector")
+serial_arg = DeclareLaunchArgument('serial_port', default_value="/dev/ttyUSB0")
 frame_id_arg = DeclareLaunchArgument('frame_id', default_value=[LC('robot'), "/imu_link"])
 
 before_topic_remap = DeclareLaunchArgument('serial_port', default_value="/dev/imu_vector")
@@ -57,7 +59,7 @@ def generate_launch_description():
         
         # print the startup info
         # LogInfo(msg=LC("frame_id")),
-        LogInfo(msg=["Serial port: ", LC("serial_port")]),
+        # LogInfo(msg=["Serial port: ", LC("serial_port")]),
         
         # start the nodes
         start_vectornav_cmd,
