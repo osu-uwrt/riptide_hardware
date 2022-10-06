@@ -46,9 +46,6 @@ robot_arg = DeclareLaunchArgument('robot', default_value="tempest", description=
 serial_arg = DeclareLaunchArgument('serial_port', default_value="/dev/ttyUSB0")
 frame_id_arg = DeclareLaunchArgument('frame_id', default_value=[LC('robot'), "/imu_link"])
 
-before_topic_remap = DeclareLaunchArgument('serial_port', default_value="/dev/imu_vector")
-before_topic_remap = DeclareLaunchArgument('serial_port', default_value="/dev/imu_vector")
-
 def generate_launch_description():
     # Create the launch description and populate
     return LaunchDescription([
