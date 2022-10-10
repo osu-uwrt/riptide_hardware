@@ -1,5 +1,5 @@
 from launch.launch_description import LaunchDescription
-from launch.actions import DeclareLaunchArgument, GroupAction
+from launch.actions import DeclareLaunchArgument, GroupAction, TimerAction
 from launch_ros.actions import Node, PushRosNamespace
 from ament_index_python.packages import get_package_share_directory
 from launch.substitutions import PathJoinSubstitution, LaunchConfiguration as LC
@@ -55,10 +55,11 @@ video_recorder_node = Node(
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('record_path', default_value=str(Path.home()), description="The path to record to"),
-
-        video_recorder_node,
         GroupAction([
             PushRosNamespace("underwater_cam"),
-            camera_node
+            camera_node,
+
+            # delay the recorder start
+            TimerAction(period=3.0, actions=[video_recorder_node,])
         ])
     ])
