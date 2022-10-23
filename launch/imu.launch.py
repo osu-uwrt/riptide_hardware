@@ -19,7 +19,7 @@ start_vectornav_cmd = Node(
     parameters=[
         imu_config_file,
         {
-            'frame_id': LC("frame_id"),
+            'frame_id': LC("imu_frame_id"),
             'port': LC("serial_port")
         }
     ],
@@ -44,7 +44,7 @@ start_vectornav_sensor_msgs_cmd = Node(
 
 robot_arg = DeclareLaunchArgument('robot', default_value="tempest", description="Name of the vehicle")
 serial_arg = DeclareLaunchArgument('serial_port', default_value="/dev/ttyUSB0")
-frame_id_arg = DeclareLaunchArgument('frame_id', default_value=[LC('robot'), "/imu_link"])
+frame_id_arg = DeclareLaunchArgument('imu_frame_id', default_value=[LC('robot'), "/imu_link"])
 
 def generate_launch_description():
     # Create the launch description and populate
